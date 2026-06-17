@@ -80,3 +80,47 @@ class ActivationLayer(Layer):
     def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
         # Regla de la cadena: dE/dX = dE/dZ * h'(X)
         return output_gradient * self.activation_fn.derivative(self.input)
+
+class VAEBottleneckLayer(Layer):
+    """
+    Capa de muestreo para el VAE (Reparameterization Trick).
+    Espera una entrada de tamaño 2*latent_dim.
+    """
+    def __init__(self, latent_dim: int, kl_weight: float = 0.001):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.kl_weight = kl_weight
+        self.mu = None
+        self.log_var = None
+        self.epsilon = None
+        self.kl_loss = 0.0
+
+    def forward(self, input_data: np.ndarray) -> np.ndarray:
+        self.input = input_data
+        
+        self.mu = input_data[:, :self.latent_dim]
+        self.log_var = input_data[:, self.latent_dim:]
+        
+        self.epsilon = np.random.randn(*self.mu.shape)
+        z = self.mu + np.exp(self.log_var / 2) * self.epsilon
+        
+        # KL loss promedio por muestra
+        self.kl_loss = -0.5 * np.mean(np.sum(1 + self.log_var - np.square(self.mu) - np.exp(self.log_var), axis=1))
+        
+        return z
+
+    def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
+        # output_gradient es de tamaño (batch_size, latent_dim)
+        dRec_dmu = output_gradient
+        dRec_dlog_var = output_gradient * 0.5 * np.exp(self.log_var / 2) * self.epsilon
+        
+        # El BCE original está promediado por tamaño total (batch * 35).
+        # Ajustamos el gradiente KL acordemente o mediante kl_weight.
+        dKL_dmu = self.mu * self.kl_weight
+        dKL_dlog_var = 0.5 * (np.exp(self.log_var) - 1.0) * self.kl_weight
+        
+        grad_mu = dRec_dmu + dKL_dmu
+        grad_log_var = dRec_dlog_var + dKL_dlog_var
+        
+        input_gradient = np.concatenate([grad_mu, grad_log_var], axis=1)
+        return input_gradient
