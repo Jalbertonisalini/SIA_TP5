@@ -35,3 +35,38 @@ class FontLoader:
                     caracteres.append(caracter_aplanado)
                     
         return np.array(caracteres)
+
+class FontAugmenter:
+    """Genera variantes de fuentes a partir de la fuente base."""
+    @staticmethod
+    def generate_bold(X: np.ndarray) -> np.ndarray:
+        # Engrosar la letra horizontalmente haciendo un OR con la misma letra desplazada 1 pixel a la derecha
+        X_bold = np.zeros_like(X)
+        for i in range(X.shape[0]):
+            img = X[i].reshape(7, 5)
+            img_shifted = np.roll(img, shift=1, axis=1)
+            img_shifted[:, 0] = 0 # No hacer wrap-around
+            bold_img = np.logical_or(img, img_shifted).astype(float)
+            X_bold[i] = bold_img.flatten()
+        return X_bold
+
+    @staticmethod
+    def generate_italic(X: np.ndarray) -> np.ndarray:
+        # Desplazar las filas superiores a la derecha
+        X_italic = np.zeros_like(X)
+        for i in range(X.shape[0]):
+            img = X[i].reshape(7, 5).copy()
+            # Fila 0, 1 desplazadas 2 px
+            img[0:2] = np.roll(img[0:2], shift=2, axis=1)
+            img[0:2, 0:2] = 0
+            # Fila 2, 3 desplazadas 1 px
+            img[2:4] = np.roll(img[2:4], shift=1, axis=1)
+            img[2:4, 0] = 0
+            X_italic[i] = img.flatten()
+        return X_italic
+
+    @staticmethod
+    def create_multipattern_dataset(X_base: np.ndarray):
+        X_bold = FontAugmenter.generate_bold(X_base)
+        X_italic = FontAugmenter.generate_italic(X_base)
+        return np.vstack([X_base, X_bold, X_italic])
