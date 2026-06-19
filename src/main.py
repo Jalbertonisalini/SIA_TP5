@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 # Importamos todas las piezas que construimos
 from core.activations import Sigmoid, Tanh
@@ -7,7 +8,11 @@ from core.network import Network
 from core.losses import MSE, BCE
 from utils.data_loader import FontLoader
 from utils.plotter import Plotter
+import matplotlib.pyplot as plt
 
+
+# Aseguramos que exista la carpeta outputs
+os.makedirs('outputs', exist_ok=True)
 
 def evaluate_pixel_diff(expected: np.ndarray, predicted: np.ndarray) -> int:
     """
@@ -21,36 +26,61 @@ def evaluate_pixel_diff(expected: np.ndarray, predicted: np.ndarray) -> int:
     return np.max(errors_per_letter)
 
 
-def create_autoencoder() -> Network:
-    """Instancia la arquitectura base del autoencoder 35 -> 16 -> 2 -> 16 -> 35"""
-    autoencoder = Network()
-    
-    # --- ENCODER ---
-    autoencoder.add(Linear(input_size=35, output_size=16))
-    autoencoder.add(ActivationLayer(Tanh()))
-    
-    # CUELLO DE BOTELLA (Latent Space 2D)
-    autoencoder.add(Linear(input_size=16, output_size=2))
-    autoencoder.add(ActivationLayer(Tanh())) 
-    
-    # --- DECODER ---
-    autoencoder.add(Linear(input_size=2, output_size=16))
-    autoencoder.add(ActivationLayer(Tanh()))
-    
-    autoencoder.add(Linear(input_size=16, output_size=35))
-    autoencoder.add(ActivationLayer(Sigmoid()))
-    
-    return autoencoder
+# =====================================================================
+# FACTORY: ARQUITECTURAS DEL AUTOENCODER
+# =====================================================================
+
+def create_base_ae() -> Network:
+    """Arquitectura Base (Control): 35 -> 16 -> 2 -> 16 -> 35"""
+    ae = Network()
+    ae.add(Linear(35, 16)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16, 2));  ae.add(ActivationLayer(Tanh())) 
+    ae.add(Linear(2, 16));  ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16, 35)); ae.add(ActivationLayer(Sigmoid()))
+    return ae
+
+def create_shallow_ae() -> Network:
+    """Arquitectura Superficial: 35 -> 2 -> 35 (Sin capas ocultas)"""
+    ae = Network()
+    ae.add(Linear(35, 2));  ae.add(ActivationLayer(Tanh())) 
+    ae.add(Linear(2, 35));  ae.add(ActivationLayer(Sigmoid()))
+    return ae
+
+def create_narrow_ae() -> Network:
+    """Arquitectura Angosta: 35 -> 4 -> 2 -> 4 -> 35"""
+    ae = Network()
+    ae.add(Linear(35, 4));  ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(4, 2));   ae.add(ActivationLayer(Tanh())) 
+    ae.add(Linear(2, 4));   ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(4, 35));  ae.add(ActivationLayer(Sigmoid()))
+    return ae
+
+def create_deep_wide_ae() -> Network:
+    """Arquitectura Profunda y Ancha: 35 -> 32 -> 16 -> 2 -> 16 -> 32 -> 35"""
+    ae = Network()
+    ae.add(Linear(35, 32)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(32, 16)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16, 2));  ae.add(ActivationLayer(Tanh())) 
+    ae.add(Linear(2, 16));  ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16, 32)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(32, 35)); ae.add(ActivationLayer(Sigmoid()))
+    return ae
 
 
-def train_autoencoder(X: np.ndarray, epochs: int = 15000, learning_rate: float = 0.1) -> Network:
-    """Entrena la red y devuelve el modelo entrenado."""
-    autoencoder = create_autoencoder()
+# =====================================================================
+# MOTOR DE ENTRENAMIENTO
+# =====================================================================
+
+def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, learning_rate: float = 0.1) -> tuple[Network, list]:
+    """Entrena la red inyectada y devuelve el modelo y su historial de loss."""
     loss_function = BCE()
+    loss_history = []
     
     for epoch in range(epochs):
         predicted = autoencoder.forward(X)
         loss = loss_function.calculate(expected=X, predicted=predicted)
+        loss_history.append(loss)
+        
         max_incorrect_pixels = evaluate_pixel_diff(X, predicted)
         
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
@@ -63,41 +93,208 @@ def train_autoencoder(X: np.ndarray, epochs: int = 15000, learning_rate: float =
             print(f"  Objective achieved! Early convergence at epoch {epoch}. Max error <= 1.")
             break
             
-    return autoencoder
+    return autoencoder, loss_history
 
+
+# =====================================================================
+# EXPERIMENTOS
+# =====================================================================
 
 def experiment_full_dataset(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 1: Full Dataset (32 letters) ---")
-    ae_full = train_autoencoder(X, epochs=10000, learning_rate=0.1)
+    ae = create_base_ae()
+    ae_full, _ = train_autoencoder(ae, X, epochs=10000, learning_rate=0.1)
     Plotter.plot_latent_space(ae_full, X, "Full Dataset", "latent_full.png", labels=labels)
-    Plotter.generate_new_letter(ae_full, z_coord=[1.0, 1.0], filename="generated_letter_full.png")
 
 
 def experiment_subset(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 2: Subset (5 letters) ---")
     X_sub = X[:5]
     labels_sub = labels[:5]
-    ae_sub = train_autoencoder(X_sub, epochs=10000, learning_rate=0.1)
+    ae = create_base_ae()
+    ae_sub, _ = train_autoencoder(ae, X_sub, epochs=10000, learning_rate=0.1)
+    
     Plotter.plot_latent_space(ae_sub, X_sub, "Subset (5 letters)", "latent_subset.png", labels=labels_sub)    
     print("\nGenerating a new letter from intermediate coordinates...")
-    # Acá le inventamos una coordenada en el medio del plano
     Plotter.generate_new_letter(ae_sub, z_coord=[1.0, 1.0], filename="generated_letter.png")
 
 
+def experiment_architectures(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT 3: Multi-Seed Architecture Comparison ---")
+    X_sub = X[:10]
+    labels_sub = labels[:10] # Necesario para plotear el latent space correctamente
+    
+    arquitecturas = {
+        "Base (16-2-16)": create_base_ae,
+        "Shallow (2)": create_shallow_ae,
+        "Narrow (4-2-4)": create_narrow_ae,
+        "Deep & Wide (32-16-2-16-32)": create_deep_wide_ae
+    }
+    
+    semillas = [42, 100, 800, 1024, 2024]
+    max_epochs = 5000
+    
+    resultados_loss = {nombre: [] for nombre in arquitecturas.keys()}
+    
+    for nombre, factory_fn in arquitecturas.items():
+        print(f"\n[+] Evaluando arquitectura: {nombre}")
+        
+        # Variables para trackear a la mejor semilla de esta arquitectura
+        mejor_modelo = None
+        menor_loss = float('inf')
+        mejor_seed = None
+        
+        for seed in semillas:
+            print(f"  -> Corriendo Seed: {seed}...")
+            np.random.seed(seed)
+            
+            modelo = factory_fn() 
+            modelo_entrenado, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=0.1)
+            
+            # Evaluamos si esta semilla logró el menor error
+            loss_final = historial[-1]
+            if loss_final < menor_loss:
+                menor_loss = loss_final
+                mejor_modelo = modelo_entrenado
+                mejor_seed = seed
+            
+            # Padding para el gráfico promedio
+            while len(historial) < max_epochs:
+                historial.append(historial[-1])
+                
+            resultados_loss[nombre].append(historial)
+            
+        print(f"  [*] Mejor corrida para {nombre}: Seed {mejor_seed} con Loss {menor_loss:.4f}")
+        
+        # Limpiamos el nombre para que no rompa la ruta del archivo
+        nombre_limpio = nombre.replace(' ', '_').replace('(', '').replace(')', '')
+        
+        # Generamos los gráficos EXCLUSIVAMENTE del modelo campeón
+        if hasattr(Plotter, 'plot_latent_space'):
+            Plotter.plot_latent_space(
+                mejor_modelo, X_sub, 
+                f"{nombre} (Best Seed: {mejor_seed})", 
+                f"latent_best_{nombre_limpio}.png", 
+                labels=labels_sub
+            )
+            
+        if hasattr(Plotter, 'compare_reconstruction'):
+            Plotter.compare_reconstruction(
+                mejor_modelo, X_sub[1], "a", 
+                f"comparativa_best_{nombre_limpio}.png"
+            )
+
+    Plotter.plot_architecture_comparison(
+        resultados_loss,
+        max_epochs,
+        "architecture_multiseed_comparison.png",
+    )
+
+# Con todo el dataset se observa
+def experiment_learning_rates(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT 4: Multi-Seed Learning Rate Comparison ---")
+    X_sub = X
+    
+    factory_fn = create_base_ae
+    
+    # Definimos los LRs a testear: uno lento, el ideal, uno agresivo y uno bestial
+    learning_rates = [0.01, 0.1, 1.5]
+    semillas = [42, 100, 800, 1024, 2024]
+    max_epochs = 20000
+    
+    resultados_loss = {str(lr): [] for lr in learning_rates}
+    
+    for lr in learning_rates:
+        print(f"\n[+] Evaluando Learning Rate: {lr}")
+        
+        for seed in semillas:
+            print(f"  -> Corriendo Seed: {seed}...")
+            np.random.seed(seed)
+            
+            modelo = factory_fn() 
+            _, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=lr)
+            
+            # Padding por si el Early Stopping cortó antes
+            while len(historial) < max_epochs:
+                historial.append(historial[-1])
+                
+            resultados_loss[str(lr)].append(historial)
+
+    Plotter.plot_learning_rate_comparison(
+        resultados_loss,
+        max_epochs,
+        "learning_rate_multiseed_comparison.png",
+    )
+    
+def experiment_dataset_size(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT 5: Latent Space Capacity (Multi-Seed Stress Test) ---")
+    
+    sizes = [2, 5, 8, 12, 16, 24, 32]
+    seeds = [42, 100, 800, 1024, 2024]
+    max_epochs = 10000 
+    
+    mean_pixels = []
+    pixeles_std = []
+    loss_media = []
+    loss_std = []
+    
+    for n in sizes:
+        print(f"\n[+] Evaluando capacidad con N = {n} letras...")
+        X_sub = X[:n]
+        
+        pixeles_por_semilla = []
+        loss_por_semilla = []
+        
+        for seed in seeds:
+            np.random.seed(seed) 
+            modelo = create_base_ae()
+            
+            # Entrenamos
+            modelo_entrenado, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=0.1)
+            
+            # Evaluamos
+            prediccion_final = modelo_entrenado.forward(X_sub)
+            pixeles_erroneos_max = evaluate_pixel_diff(X_sub, prediccion_final)
+            loss_final = historial[-1]
+            
+            pixeles_por_semilla.append(pixeles_erroneos_max)
+            loss_por_semilla.append(loss_final)
+            
+        # Calculamos estadísticas
+        mean_pixels.append(np.mean(pixeles_por_semilla))
+        pixeles_std.append(np.std(pixeles_por_semilla))
+        loss_media.append(np.mean(loss_por_semilla))
+        loss_std.append(np.std(loss_por_semilla))
+        
+        print(f"  [*] N={n} | Media Píxeles: {mean_pixels[-1]:.1f} (±{pixeles_std[-1]:.1f}) | Media Loss: {loss_media[-1]:.4f}")
+
+    # Delegamos el renderizado visual a nuestra clase Plotter
+    Plotter.plot_dataset_capacity_comparison(
+        sizes=np.array(sizes),
+        mean_pixels=np.array(mean_pixels),
+        pixeles_std=np.array(pixeles_std),
+        loss_media=np.array(loss_media),
+        loss_std=np.array(loss_std),
+        filename='dataset_capacity_multiseed.png'
+    )
+# =====================================================================
+# EJECUCIÓN PRINCIPAL
+# =====================================================================
+
 def main():
-    # Seed para reproducibilidad
     np.random.seed(800)
     print("Loading dataset...")
     X = FontLoader.load_and_flatten('data/font.h')
     print(f"Data dimensions: {X.shape}")
     
-    # Generamos los caracteres a partir de su código ASCII base (0x60)
     caracteres = [chr(0x60 + i) if i < 31 else 'DEL' for i in range(32)]
     
-    # Corremos ambos experimentos secuencialmente pasando las etiquetas
-    experiment_full_dataset(X, caracteres)
-    experiment_subset(X, caracteres)
-
+    # Comentá o descomentá los experimentos según lo que necesites correr
+    # experiment_full_dataset(X, caracteres)
+    # experiment_subset(X, caracteres)
+    # experiment_architectures(X, caracteres)
+    # experiment_learning_rates(X, caracteres)
+    # experiment_dataset_size(X, caracteres)
 
 if __name__ == "__main__":
     main()
