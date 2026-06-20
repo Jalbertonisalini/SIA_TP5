@@ -397,6 +397,90 @@ def experiment_optimizers(X: np.ndarray, labels: list):
         "optimizer_multiseed_comparison.png"
     )
     
+def experiment_data_orthogonality(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT 7: Data Quality (Orthogonal vs Similar Subsets) ---")
+    
+    Plotter.plot_similarity_matrix(X, labels, "dataset_orthogonality_matrix.png")
+    
+    # 1. Calculamos la matriz de Similitud Coseno
+    norms = np.linalg.norm(X, axis=1, keepdims=True)
+    X_norm = X / np.where(norms == 0, 1e-10, norms)
+    sim_matrix = np.dot(X_norm, X_norm.T)
+    
+    subset_size = 5
+    
+    # --- Búsqueda del Subset SIMILAR (El desafío difícil) ---
+    np.fill_diagonal(sim_matrix, -1) # Ignoramos la diagonal (similitud de una letra consigo misma)
+    # Agarramos el par de letras más parecidas de todo el abecedario
+    i, j = np.unravel_index(np.argmax(sim_matrix), sim_matrix.shape)
+    similar_idx = [i, j]
+    
+    while len(similar_idx) < subset_size:
+        # Sumamos la similitud de todas las letras contra el subset actual
+        sim_sums = np.sum(sim_matrix[:, similar_idx], axis=1)
+        sim_sums[similar_idx] = -np.inf # Excluimos las ya elegidas
+        similar_idx.append(int(np.argmax(sim_sums)))
+        
+    # --- Búsqueda del Subset ORTOGONAL (El desafío fácil) ---
+    np.fill_diagonal(sim_matrix, 0)
+    # Empezamos con la letra más "rara" (la que menos se parece al promedio)
+    ortho_idx = [int(np.argmin(np.mean(sim_matrix, axis=1)))]
+    
+    while len(ortho_idx) < subset_size:
+        # Buscamos la letra que tenga la menor similitud máxima con las ya elegidas
+        max_sims = np.max(sim_matrix[:, ortho_idx], axis=1)
+        max_sims[ortho_idx] = np.inf # Excluimos las ya elegidas
+        ortho_idx.append(int(np.argmin(max_sims)))
+
+    labels_similar = [labels[idx] for idx in similar_idx]
+    labels_ortho = [labels[idx] for idx in ortho_idx]
+    
+    print(f"  [*] Subset 'Similar' (Difícil): {labels_similar}")
+    print(f"  [*] Subset 'Ortogonal' (Fácil): {labels_ortho}")
+
+    Plotter.plot_subset_orthogonality_heatmaps(
+        X_sim=X[similar_idx], labels_sim=labels_similar, 
+        X_ortho=X[ortho_idx], labels_ortho=labels_ortho, 
+        filename="subset_matrices_comparativas.png"
+    )
+
+    # 2. Entrenamos usando Vanilla SGD (LR=0.1) para ambos subsets
+    max_epochs = 10000
+    semillas = [42, 100, 800, 1024, 2024]
+    
+    subsets_a_evaluar = {
+        f"Subset Similar {labels_similar}": X[similar_idx],
+        f"Subset Ortogonal {labels_ortho}": X[ortho_idx]
+    }
+    
+    resultados_loss = {nombre: [] for nombre in subsets_a_evaluar.keys()}
+    
+    for nombre, X_subset in subsets_a_evaluar.items():
+        print(f"\n[+] Evaluando {nombre}...")
+        
+        historiales_crudos = []
+        for seed in semillas:
+            np.random.seed(seed)
+            modelo = create_base_ae()
+            # Usamos SGD explícitamente para ver cómo sufre
+            opt = SGD(learning_rate=0.1)
+            _, historial = train_autoencoder(modelo, X_subset, epochs=max_epochs, optimizer=opt)
+            historiales_crudos.append(historial)
+            
+        max_epocas_real = max(len(h) for h in historiales_crudos)
+        
+        historiales_ajustados = []
+        for h in historiales_crudos:
+            h_ajustado = h.copy()
+            while len(h_ajustado) < max_epocas_real:
+                h_ajustado.append(h_ajustado[-1])
+            historiales_ajustados.append(h_ajustado)
+            
+        resultados_loss[nombre] = historiales_ajustados
+
+    # 3. Ploteamos
+    Plotter.plot_subset_orthogonality_comparison(resultados_loss, "data_orthogonality_comparison.png")
+    
 # =====================================================================
 # EJECUCIÓN PRINCIPAL
 # =====================================================================
@@ -428,12 +512,12 @@ def main():
     
     # Comentá o descomentá los experimentos según lo que necesites correr
     # experiment_full_dataset(X, caracteres)
-    experiment_subset(X, caracteres)
-    experiment_denoising(X, caracteres)
+    # experiment_subset(X, caracteres)
     # experiment_architectures(X, caracteres)
     # experiment_learning_rates(X, caracteres)
     # experiment_dataset_size(X, caracteres)
     # experiment_optimizers(X, caracteres)
+    experiment_data_orthogonality(X, caracteres)
 
 if __name__ == "__main__":
     main()
