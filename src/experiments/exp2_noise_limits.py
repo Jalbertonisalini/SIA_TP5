@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from core.activations import Sigmoid, Tanh
 from core.layers import Linear, ActivationLayer
+from core.optimizers import SGD
 from core.network import Network
 from core.losses import BCE
 from utils.data_loader import FontLoader
@@ -37,12 +38,13 @@ def create_dae() -> Network:
 def train_dae(X_clean: np.ndarray, noise_level: float, epochs: int = 5000):
     ae = create_dae()
     loss_function = BCE()
+    optimizer = SGD(learning_rate=0.1)
     X_noisy = add_noise(X_clean, noise_level)
     
     for epoch in range(epochs):
         predicted = ae.forward(X_noisy)
         initial_gradient = loss_function.derivative(expected=X_clean, predicted=predicted)
-        ae.backward(initial_gradient, learning_rate=0.1)
+        ae.backward(initial_gradient, optimizer)
         
         max_incorrect = evaluate_pixel_diff(X_clean, predicted)
         if max_incorrect <= 1:

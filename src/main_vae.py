@@ -5,6 +5,7 @@ import os
 from core.activations import Sigmoid, Tanh
 from core.layers import Linear, ActivationLayer, VAEBottleneckLayer
 from core.network import Network
+from core.optimizers import SGD
 from core.losses import BCE
 from utils.data_loader import FontLoader, FontAugmenter
 
@@ -40,6 +41,7 @@ def create_vae() -> Network:
 def train_vae(X: np.ndarray, epochs: int = 20000, learning_rate: float = 0.05) -> Network:
     vae = create_vae()
     loss_function = BCE()
+    optimizer = SGD(learning_rate=learning_rate)
     
     vae_layer = vae.layers[3]
     
@@ -52,7 +54,7 @@ def train_vae(X: np.ndarray, epochs: int = 20000, learning_rate: float = 0.05) -
         max_incorrect_pixels = evaluate_pixel_diff(X, predicted)
         
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
-        vae.backward(initial_gradient, learning_rate)
+        vae.backward(initial_gradient, optimizer)
         
         if epoch % 1000 == 0:
             print(f"  Epoch {epoch:05d} | Rec Loss: {rec_loss:.4f} | KL Loss: {kl_loss:.4f} | Total: {total_loss:.4f} | Max incorrect pixels: {max_incorrect_pixels}")

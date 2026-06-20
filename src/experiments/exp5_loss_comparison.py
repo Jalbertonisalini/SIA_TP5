@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from core.activations import Sigmoid, Tanh
 from core.layers import Linear, ActivationLayer
+from core.optimizers import SGD
 from core.network import Network
 from core.losses import BCE, MSE
 from utils.data_loader import FontLoader
@@ -24,11 +25,12 @@ def train_with_loss(X: np.ndarray, loss_name: str, epochs: int = 8000):
     ae = create_autoencoder()
     loss_function = BCE() if loss_name == 'BCE' else MSE()
     lr = 0.1 if loss_name == 'BCE' else 0.5 # MSE necesita más LR porque sus gradientes son menores
+    optimizer = SGD(learning_rate=lr)
     
     for epoch in range(epochs):
         predicted = ae.forward(X)
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
-        ae.backward(initial_gradient, learning_rate=lr)
+        ae.backward(initial_gradient, optimizer)
             
     return ae
 

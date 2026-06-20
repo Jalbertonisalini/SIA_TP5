@@ -22,7 +22,7 @@ class Network:
             output = layer.forward(output)
         return output
 
-    def backward(self, loss_gradient: np.ndarray, learning_rate: float) -> None:
+    def backward(self, loss_gradient: np.ndarray, optimizer) -> None:
         """
         Propaga el error hacia atrás, desde la última capa hasta la primera.
         Cada capa actualiza sus pesos internamente.
@@ -32,7 +32,7 @@ class Network:
         
         # Recorremos las capas en orden inverso
         for layer in reversed(self.layers):
-            gradient = layer.backward(gradient, learning_rate)
+            gradient = layer.backward(gradient, optimizer)
 
     def predict(self, input_data: np.ndarray) -> np.ndarray:
         """Alias para forward"""

@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from core.activations import Sigmoid, Tanh
 from core.layers import Linear, ActivationLayer, VAEBottleneckLayer
+from core.optimizers import SGD
 from core.network import Network
 from core.losses import BCE
 from utils.data_loader import FontLoader
@@ -29,11 +30,12 @@ def create_vae(kl_weight: float) -> Network:
 def train_vae(X: np.ndarray, kl_weight: float, epochs: int = 5000):
     vae = create_vae(kl_weight)
     loss_function = BCE()
+    optimizer = SGD(learning_rate=0.05)
     
     for epoch in range(epochs):
         predicted = vae.forward(X)
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
-        vae.backward(initial_gradient, learning_rate=0.05)
+        vae.backward(initial_gradient, optimizer)
             
     return vae
 

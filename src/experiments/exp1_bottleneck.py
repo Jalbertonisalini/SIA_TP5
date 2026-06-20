@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from core.activations import Sigmoid, Tanh
 from core.layers import Linear, ActivationLayer
+from core.optimizers import SGD
 from core.network import Network
 from core.losses import BCE
 from utils.data_loader import FontLoader
@@ -38,13 +39,14 @@ def create_autoencoder(latent_dim: int) -> Network:
 def train_autoencoder(X: np.ndarray, latent_dim: int, epochs: int = 5000, learning_rate: float = 0.1):
     ae = create_autoencoder(latent_dim)
     loss_function = BCE()
+    optimizer = SGD(learning_rate=learning_rate)
     
     for epoch in range(epochs):
         predicted = ae.forward(X)
         max_incorrect_pixels = evaluate_pixel_diff(X, predicted)
         
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
-        ae.backward(initial_gradient, learning_rate)
+        ae.backward(initial_gradient, optimizer)
         
         # Early stopping
         if max_incorrect_pixels == 0:

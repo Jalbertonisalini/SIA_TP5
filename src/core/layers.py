@@ -1,5 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
+from core.optimizers import Optimizer
 
 from core.activations import ActivationFunction
 
@@ -20,11 +21,11 @@ class Layer(ABC):
         pass
 
     @abstractmethod
-    def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
+    def backward(self, output_gradient: np.ndarray, optimizer: Optimizer) -> np.ndarray:
         """
         Toma el gradiente del error proveniente de la capa siguiente,
-        actualiza sus parámetros (si tiene pesos/sesgos), y devuelve 
-        el gradiente respecto a su entrada para continuar la propagación.
+        delega la actualización de sus parámetros (si tiene pesos/sesgos) al optimizador, 
+        y devuelve el gradiente respecto a su entrada para continuar la propagación.
         """
         pass
     
@@ -50,7 +51,7 @@ class Linear(Layer):
         # Ecuación: XW + b
         return np.dot(self.input, self.weights) + self.bias
 
-    def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
+    def backward(self, output_gradient: np.ndarray, optimizer: Optimizer) -> np.ndarray:
         # Derivada respecto a la entrada (dE/dX = dE/dZ * W^T)
         input_gradient = np.dot(output_gradient, self.weights.T)
 
@@ -58,9 +59,9 @@ class Linear(Layer):
         weights_gradient = np.dot(self.input.T, output_gradient)
         bias_gradient = np.sum(output_gradient, axis=0, keepdims=True)
 
-        # Actualización de parámetros (Descenso por gradiente estándar)
-        self.weights -= learning_rate * weights_gradient
-        self.bias -= learning_rate * bias_gradient
+        # Actualización de parámetros delegada al Optimizador
+        self.weights = optimizer.update(id(self), "weights", self.weights, weights_gradient)
+        self.bias = optimizer.update(id(self), "bias", self.bias, bias_gradient)
 
         return input_gradient
 
@@ -77,7 +78,7 @@ class ActivationLayer(Layer):
         # Aplicación de h(XW + b)
         return self.activation_fn.calculate(self.input)
 
-    def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
+    def backward(self, output_gradient: np.ndarray, optimizer: Optimizer) -> np.ndarray:
         # Regla de la cadena: dE/dX = dE/dZ * h'(X)
         return output_gradient * self.activation_fn.derivative(self.input)
 
@@ -109,7 +110,7 @@ class VAEBottleneckLayer(Layer):
         
         return z
 
-    def backward(self, output_gradient: np.ndarray, learning_rate: float) -> np.ndarray:
+    def backward(self, output_gradient: np.ndarray, optimizer: Optimizer) -> np.ndarray:
         # output_gradient es de tamaño (batch_size, latent_dim)
         dRec_dmu = output_gradient
         dRec_dlog_var = output_gradient * 0.5 * np.exp(self.log_var / 2) * self.epsilon
@@ -123,4 +124,4 @@ class VAEBottleneckLayer(Layer):
         grad_log_var = dRec_dlog_var + dKL_dlog_var
         
         input_gradient = np.concatenate([grad_mu, grad_log_var], axis=1)
-        return input_gradient
+        return input_gradient
