@@ -113,8 +113,10 @@ def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, 
 def experiment_full_dataset(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 1: Full Dataset (32 letters) ---")
     ae = create_base_ae()
-    ae_full, _ = train_autoencoder(ae, X, epochs=10000, learning_rate=0.1)
+    ae_full, _ = train_autoencoder(ae, X, epochs=10000, learning_rate=0.1, optimizer=Adam(learning_rate=0.01))
     Plotter.plot_latent_space(ae_full, X, "Full Dataset", "latent_full.png", labels=labels)
+    Plotter.generate_new_letter(ae_full, z_coord=[0.0, 0.2], filename="generated_letter.png")
+
 
 # Experimento 2: Entrenamiento con un subset reducido (5 letras)
 
@@ -123,11 +125,11 @@ def experiment_subset(X: np.ndarray, labels: list):
     X_sub = X[:5]
     labels_sub = labels[:5]
     ae = create_base_ae()
-    ae_sub, _ = train_autoencoder(ae, X_sub, epochs=10000, learning_rate=0.1)
+    ae_sub, _ = train_autoencoder(ae, X_sub, epochs=10000, learning_rate=0.1, optimizer=Adam(learning_rate=0.01))
     
     Plotter.plot_latent_space(ae_sub, X_sub, "Subset (5 letters)", "latent_subset.png", labels=labels_sub)    
     print("\nGenerating a new letter from intermediate coordinates...")
-    Plotter.generate_new_letter(ae_sub, z_coord=[1.0, 1.0], filename="generated_letter.png")
+    Plotter.generate_new_letter(ae_sub, z_coord=[1.0, -1.0], filename="generated_letter.png")
 
 # Experimento 3: Comparación de arquitecturas con múltiples semillas
 
@@ -161,7 +163,7 @@ def experiment_architectures(X: np.ndarray, labels: list):
             np.random.seed(seed)
             
             modelo = factory_fn() 
-            modelo_entrenado, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=0.1)
+            modelo_entrenado, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=0.1, optimizer=Adam(learning_rate=0.01))
             
             # Evaluamos si esta semilla logró el menor error
             loss_final = historial[-1]
@@ -225,7 +227,7 @@ def experiment_learning_rates(X: np.ndarray, labels: list):
             np.random.seed(seed)
             
             modelo = factory_fn() 
-            _, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=lr)
+            _, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, learning_rate=lr, optimizer=Adam(learning_rate=0.01))
             
             # Padding por si el Early Stopping cortó antes
             while len(historial) < max_epochs:
@@ -296,7 +298,7 @@ def experiment_dataset_size(X: np.ndarray, labels: list):
 def experiment_optimizers(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 6: Optimizer Comparison (SGD vs Adam) ---")
     
-    X_sub = X[:10] 
+    X_sub = X
     
     optimizadores = {
         "SGD Clásico (LR=0.1)": lambda: SGD(learning_rate=0.1),
@@ -356,11 +358,11 @@ def main():
     
     # Comentá o descomentá los experimentos según lo que necesites correr
     # experiment_full_dataset(X, caracteres)
-    # experiment_subset(X, caracteres)
+    experiment_subset(X, caracteres)
     # experiment_architectures(X, caracteres)
     # experiment_learning_rates(X, caracteres)
     # experiment_dataset_size(X, caracteres)
-    experiment_optimizers(X, caracteres)
+    # experiment_optimizers(X, caracteres)
 
 if __name__ == "__main__":
     main()
