@@ -9,6 +9,7 @@ from core.losses import MSE, BCE
 from utils.data_loader import FontLoader
 from utils.plotter import Plotter
 import matplotlib.pyplot as plt
+from core.optimizers import SGD, Adam
 
 
 # Aseguramos que exista la carpeta outputs
@@ -71,8 +72,13 @@ def create_deep_wide_ae() -> Network:
 # MOTOR DE ENTRENAMIENTO
 # =====================================================================
 
-def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, learning_rate: float = 0.1) -> tuple[Network, list]:
+def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, learning_rate: float = 0.1, optimizer=None) -> tuple[Network, list]:
     """Entrena la red inyectada y devuelve el modelo y su historial de loss."""
+    
+    # Si no se pasa un optimizador, usamos SGD con el learning rate dado por parámetro
+    if optimizer is None:
+        optimizer = SGD(learning_rate=learning_rate)
+        
     loss_function = BCE()
     loss_history = []
     
@@ -84,7 +90,9 @@ def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, 
         max_incorrect_pixels = evaluate_pixel_diff(X, predicted)
         
         initial_gradient = loss_function.derivative(expected=X, predicted=predicted)
-        autoencoder.backward(initial_gradient, learning_rate)
+        
+        # CAMBIO: Pasamos el objeto optimizer en lugar del flotante
+        autoencoder.backward(initial_gradient, optimizer)
         
         if epoch % 1000 == 0:
             print(f"  Epoch {epoch:05d} | Loss (BCE): {loss:.4f} | Max incorrect pixels: {max_incorrect_pixels}")
@@ -100,12 +108,15 @@ def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, 
 # EXPERIMENTOS
 # =====================================================================
 
+# Experimento 1: Entrenamiento con el dataset completo (32 letras)
+
 def experiment_full_dataset(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 1: Full Dataset (32 letters) ---")
     ae = create_base_ae()
     ae_full, _ = train_autoencoder(ae, X, epochs=10000, learning_rate=0.1)
     Plotter.plot_latent_space(ae_full, X, "Full Dataset", "latent_full.png", labels=labels)
 
+# Experimento 2: Entrenamiento con un subset reducido (5 letras)
 
 def experiment_subset(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 2: Subset (5 letters) ---")
@@ -118,6 +129,7 @@ def experiment_subset(X: np.ndarray, labels: list):
     print("\nGenerating a new letter from intermediate coordinates...")
     Plotter.generate_new_letter(ae_sub, z_coord=[1.0, 1.0], filename="generated_letter.png")
 
+# Experimento 3: Comparación de arquitecturas con múltiples semillas
 
 def experiment_architectures(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 3: Multi-Seed Architecture Comparison ---")
@@ -190,7 +202,8 @@ def experiment_architectures(X: np.ndarray, labels: list):
         "architecture_multiseed_comparison.png",
     )
 
-# Con todo el dataset se observa
+# Experimento 4: Comparación de learning rates con múltiples semillas
+
 def experiment_learning_rates(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 4: Multi-Seed Learning Rate Comparison ---")
     X_sub = X
@@ -226,6 +239,8 @@ def experiment_learning_rates(X: np.ndarray, labels: list):
         "learning_rate_multiseed_comparison.png",
     )
     
+# Experimento 5: Evaluación de la capacidad del espacio latente con múltiples semillas
+
 def experiment_dataset_size(X: np.ndarray, labels: list):
     print("\n--- EXPERIMENT 5: Latent Space Capacity (Multi-Seed Stress Test) ---")
     
@@ -277,6 +292,56 @@ def experiment_dataset_size(X: np.ndarray, labels: list):
         loss_std=np.array(loss_std),
         filename='dataset_capacity_multiseed.png'
     )
+    
+def experiment_optimizers(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT 6: Optimizer Comparison (SGD vs Adam) ---")
+    
+    X_sub = X[:10] 
+    
+    optimizadores = {
+        "SGD Clásico (LR=0.1)": lambda: SGD(learning_rate=0.1),
+        "Adam (LR=0.01)": lambda: Adam(learning_rate=0.01)
+    }
+    
+    semillas = [42, 100, 800, 1024, 5024]
+    max_epochs = 10000 # Le damos margen a SGD
+    
+    resultados_loss = {}
+    
+    for nombre, opt_factory in optimizadores.items():
+        print(f"\n[+] Evaluando optimizador: {nombre}")
+        
+        historiales_crudos = []
+        for seed in semillas:
+            print(f"  -> Corriendo Seed: {seed}...")
+            np.random.seed(seed)
+            
+            modelo = create_base_ae()
+            opt = opt_factory()
+            
+            _, historial = train_autoencoder(modelo, X_sub, epochs=max_epochs, optimizer=opt)
+            historiales_crudos.append(historial)
+            
+        # 1. Buscamos la época máxima REAL que alcanzó este optimizador
+        max_epocas_real = max(len(h) for h in historiales_crudos)
+        print(f"  [*] {nombre} finalizó todas sus corridas en la época {max_epocas_real}")
+        
+        # 2. Rellenamos (padding) SOLO hasta esa época máxima real
+        historiales_ajustados = []
+        for h in historiales_crudos:
+            h_ajustado = h.copy()
+            while len(h_ajustado) < max_epocas_real:
+                h_ajustado.append(h_ajustado[-1])
+            historiales_ajustados.append(h_ajustado)
+            
+        resultados_loss[nombre] = historiales_ajustados
+
+    # Delegamos el renderizado (ya no le pasamos max_epochs)
+    Plotter.plot_optimizer_comparison(
+        resultados_loss,
+        "optimizer_multiseed_comparison.png"
+    )
+    
 # =====================================================================
 # EJECUCIÓN PRINCIPAL
 # =====================================================================
@@ -295,6 +360,7 @@ def main():
     # experiment_architectures(X, caracteres)
     # experiment_learning_rates(X, caracteres)
     # experiment_dataset_size(X, caracteres)
+    experiment_optimizers(X, caracteres)
 
 if __name__ == "__main__":
     main()

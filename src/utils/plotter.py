@@ -8,12 +8,15 @@ import matplotlib.ticker as ticker # Necesario para formatear los ejes
 from core.network import Network
 
 class Plotter:
-    LATENT_POINT_COLOR = "#1D3557"
-    LATENT_EDGE_COLOR = "#F1FAEE"
-    GRID_COLOR = "#D9E2EC"
-    TITLE_COLOR = "#102A43"
-    TEXT_COLOR = "#334E68"
-    SERIES_COLORS = ["#1D3557", "#2A9D8F", "#E76F51", "#6D597A"]
+    # --- Estilo Académico / Científico ---
+    FACECOLOR = "#FFFFFF" 
+    GRID_COLOR = "#E6E6E6"
+    TITLE_COLOR = "#000000"
+    TEXT_COLOR = "#333333" 
+    
+    SERIES_COLORS = ["#1F4E79", "#A63636", "#595959", "#2E7559"]
+    
+    # (El resto de tus métodos siguen acá...)
 
     @staticmethod
     def plot_latent_space(autoencoder: Network, X: np.ndarray, title: str, filename: str, labels: list = None):
@@ -271,6 +274,62 @@ class Plotter:
 
         fig.tight_layout()
         
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  [+] Gráfico guardado en: {filepath}")
+        
+    @staticmethod
+    # CAMBIO: Quitamos max_epochs de los parámetros
+    def plot_optimizer_comparison(resultados_loss: dict, filename: str):
+        print("\nGenerando gráfico de Optimizadores (Estilo Académico Dinámico)...")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        fig.patch.set_facecolor(Plotter.FACECOLOR)
+        ax.set_facecolor(Plotter.FACECOLOR)
+        ax.set_axisbelow(True)
+
+        colores = [Plotter.SERIES_COLORS[0], Plotter.SERIES_COLORS[1]] 
+
+        for (nombre, historiales), color in zip(resultados_loss.items(), colores):
+            matriz_historiales = np.array(historiales)
+            loss_promedio = np.mean(matriz_historiales, axis=0)
+            loss_std = np.std(matriz_historiales, axis=0)
+            
+            # CAMBIO CLAVE: El eje X mide exactamente lo que midió este optimizador
+            epocas_x = np.arange(len(loss_promedio))
+
+            ax.plot(epocas_x, loss_promedio, label=f"{nombre} (Media)", color=color, linewidth=1.5)
+            
+            ax.fill_between(
+                epocas_x, 
+                loss_promedio - loss_std, 
+                loss_promedio + loss_std, 
+                color=color, 
+                alpha=0.10, 
+                edgecolor='none'
+            )
+
+        ax.set_title("Convergencia Multi-Seed: SGD vs Adam", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
+        ax.set_xlabel("Épocas", color=Plotter.TEXT_COLOR, fontsize=11)
+        ax.set_ylabel("Loss Promedio (BCE)", color=Plotter.TEXT_COLOR, fontsize=11)
+        
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k' if x >= 1000 else int(x)))
+
+        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR, loc='upper right')
+        
+        ax.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color(Plotter.GRID_COLOR)
+        ax.spines['bottom'].set_color(Plotter.GRID_COLOR)
+        ax.tick_params(colors=Plotter.TEXT_COLOR)
+        
+        fig.tight_layout()
+        
+        import os
         os.makedirs('outputs', exist_ok=True)
         filepath = f'outputs/{filename}'
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
