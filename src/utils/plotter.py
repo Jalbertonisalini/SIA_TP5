@@ -356,3 +356,176 @@ class Plotter:
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"  [+] Gráfico guardado en: {filepath}")
+        
+        
+    @staticmethod
+    def plot_subset_orthogonality_comparison(resultados_loss: dict, filename: str):
+        """
+        Grafica la convergencia de dos subsets distintos para demostrar 
+        el impacto de la ortogonalidad de los datos en el Descenso de Gradiente.
+        """
+        print("\nGenerando gráfico de Calidad de Datos (Ortogonalidad)...")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        fig.patch.set_facecolor(Plotter.FACECOLOR)
+        ax.set_facecolor(Plotter.FACECOLOR)
+        ax.set_axisbelow(True)
+
+        # Rojo para el difícil (Similar), Azul Marino para el fácil (Ortogonal)
+        colores = [Plotter.SERIES_COLORS[1], Plotter.SERIES_COLORS[0]] 
+
+        for (nombre, historiales), color in zip(resultados_loss.items(), colores):
+            matriz_historiales = np.array(historiales)
+            loss_promedio = np.mean(matriz_historiales, axis=0)
+            loss_std = np.std(matriz_historiales, axis=0)
+            
+            epocas_x = np.arange(len(loss_promedio))
+
+            ax.plot(epocas_x, loss_promedio, label=f"{nombre}", color=color, linewidth=1.5)
+            ax.fill_between(
+                epocas_x, 
+                loss_promedio - loss_std, 
+                loss_promedio + loss_std, 
+                color=color, 
+                alpha=0.10, 
+                edgecolor='none'
+            )
+
+        ax.set_title("Impacto de la Ortogonalidad del Dataset en SGD", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
+        ax.set_xlabel("Épocas", color=Plotter.TEXT_COLOR, fontsize=11)
+        ax.set_ylabel("Loss Promedio (BCE)", color=Plotter.TEXT_COLOR, fontsize=11)
+        
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k' if x >= 1000 else int(x)))
+
+        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR)
+        ax.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color(Plotter.GRID_COLOR)
+        ax.spines['bottom'].set_color(Plotter.GRID_COLOR)
+        ax.tick_params(colors=Plotter.TEXT_COLOR)
+        
+        fig.tight_layout()
+        
+        import os
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  [+] Gráfico guardado en: {filepath}")
+        
+    @staticmethod
+    def plot_similarity_matrix(X: np.ndarray, labels: list, filename: str):
+        """
+        Calcula y grafica la matriz de Similitud Coseno (Heatmap) entre todos los caracteres.
+        1.0 (Color oscuro) = Caracteres idénticos.
+        0.0 (Color blanco) = Caracteres ortogonales (sin píxeles compartidos).
+        """
+        print("\nGenerando Mapa de Calor de Ortogonalidad...")
+        
+        # 1. Cálculo matemático de la similitud coseno
+        norms = np.linalg.norm(X, axis=1, keepdims=True)
+        X_norm = X / np.where(norms == 0, 1e-10, norms)
+        sim_matrix = np.dot(X_norm, X_norm.T)
+
+        # 2. Configuración del lienzo
+        fig, ax = plt.subplots(figsize=(11, 9))
+        fig.patch.set_facecolor(Plotter.FACECOLOR)
+        ax.set_facecolor(Plotter.FACECOLOR)
+
+        # 3. Dibujamos el Heatmap (Usamos 'Blues' para estilo académico)
+        cax = ax.imshow(sim_matrix, cmap='Blues', vmin=0, vmax=1)
+
+        # 4. Formateo de los ejes para mostrar las letras
+        ax.set_xticks(np.arange(len(labels)))
+        ax.set_yticks(np.arange(len(labels)))
+        ax.set_xticklabels(labels, fontsize=9, color=Plotter.TEXT_COLOR)
+        ax.set_yticklabels(labels, fontsize=9, color=Plotter.TEXT_COLOR)
+
+        # Ocultamos las marcas de los ticks (las rayitas) pero dejamos las letras
+        ax.tick_params(axis='both', which='both', length=0)
+
+        # 5. Barra de colores lateral (Leyenda)
+        cbar = fig.colorbar(cax, ax=ax, shrink=0.82, pad=0.04)
+        cbar.ax.tick_params(labelsize=10, colors=Plotter.TEXT_COLOR)
+        cbar.set_label('Similitud Coseno (0 = Ortogonal, 1 = Idéntico)', color=Plotter.TEXT_COLOR, fontsize=11, labelpad=15)
+
+        ax.set_title("Matriz de Ortogonalidad y Similitud entre Caracteres", color=Plotter.TITLE_COLOR, pad=20, fontsize=14, fontweight='bold')
+
+        # Limpiamos todos los bordes
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        fig.tight_layout()
+        
+        import os
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  [+] Matriz guardada en: {filepath}")
+        
+    @staticmethod
+    def plot_subset_orthogonality_heatmaps(X_sim: np.ndarray, labels_sim: list, X_ortho: np.ndarray, labels_ortho: list, filename: str):
+        """
+        Calcula y grafica dos matrices de similitud de 5x5 lado a lado.
+        Permite visualizar numéricamente por qué un subset es más difícil que el otro.
+        """
+        print("\nGenerando Mapas de Calor para los Subsets...")
+        
+        # Función auxiliar para la matemática
+        def calcular_similitud(X):
+            norms = np.linalg.norm(X, axis=1, keepdims=True)
+            X_norm = X / np.where(norms == 0, 1e-10, norms)
+            return np.dot(X_norm, X_norm.T)
+
+        sim_matrix_sim = calcular_similitud(X_sim)
+        sim_matrix_ortho = calcular_similitud(X_ortho)
+
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+        fig.patch.set_facecolor(Plotter.FACECOLOR)
+
+        # --- PANEL IZQUIERDO: Subset Similar (Rojos) ---
+        axes[0].set_facecolor(Plotter.FACECOLOR)
+        axes[0].imshow(sim_matrix_sim, cmap='Reds', vmin=0, vmax=1)
+        axes[0].set_title("Subset Similar (Difícil)", color=Plotter.TITLE_COLOR, pad=15, fontsize=12, fontweight='bold')
+        axes[0].set_xticks(np.arange(len(labels_sim)))
+        axes[0].set_yticks(np.arange(len(labels_sim)))
+        axes[0].set_xticklabels(labels_sim, fontsize=12, color=Plotter.TEXT_COLOR)
+        axes[0].set_yticklabels(labels_sim, fontsize=12, color=Plotter.TEXT_COLOR)
+
+        # --- PANEL DERECHO: Subset Ortogonal (Azules) ---
+        axes[1].set_facecolor(Plotter.FACECOLOR)
+        axes[1].imshow(sim_matrix_ortho, cmap='Blues', vmin=0, vmax=1)
+        axes[1].set_title("Subset Ortogonal (Fácil)", color=Plotter.TITLE_COLOR, pad=15, fontsize=12, fontweight='bold')
+        axes[1].set_xticks(np.arange(len(labels_ortho)))
+        axes[1].set_yticks(np.arange(len(labels_ortho)))
+        axes[1].set_xticklabels(labels_ortho, fontsize=12, color=Plotter.TEXT_COLOR)
+        axes[1].set_yticklabels(labels_ortho, fontsize=12, color=Plotter.TEXT_COLOR)
+
+        # Imprimimos los números adentro de los cuadrados para ambos paneles
+        for i in range(len(labels_sim)):
+            for j in range(len(labels_sim)):
+                # Para la matriz similar (Rojos)
+                color_texto_sim = "white" if sim_matrix_sim[i, j] > 0.55 else Plotter.TEXT_COLOR
+                axes[0].text(j, i, f"{sim_matrix_sim[i, j]:.2f}", ha="center", va="center", color=color_texto_sim, fontsize=10)
+                
+                # Para la matriz ortogonal (Azules)
+                color_texto_ortho = "white" if sim_matrix_ortho[i, j] > 0.55 else Plotter.TEXT_COLOR
+                axes[1].text(j, i, f"{sim_matrix_ortho[i, j]:.2f}", ha="center", va="center", color=color_texto_ortho, fontsize=10)
+
+        # Limpieza visual de ambos ejes
+        for ax in axes:
+            ax.tick_params(axis='both', which='both', length=0) # Saca las rayitas
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+        fig.tight_layout()
+        
+        import os
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  [+] Matrices guardadas en: {filepath}")
