@@ -417,7 +417,7 @@ def experiment_architectures(X: np.ndarray, labels: list):
     }
     
     semillas = [42, 100, 800, 1024, 2024, 3030, 4040, 5050, 6060, 7070]
-    max_epochs = 5000
+    max_epochs = 200000
     
     resultados_loss = {nombre: [] for nombre in arquitecturas.keys()}
     resultados_errores = {nombre: [] for nombre in arquitecturas.keys()}
@@ -591,7 +591,7 @@ def experiment_phase3_optimizers(X: np.ndarray, labels: list):
 # Delegamos el renderizado
     Plotter.plot_optimizer_comparison(
         resultados_loss,
-        resultados_errores, # <--- ¡Faltaba pasarle esto!
+        resultados_errores,
         "phase3_optimizer_comparison.png"
     )
     
@@ -661,6 +661,71 @@ def experiment_play_generative(X: np.ndarray, labels: list):
         labels=labels
     )
     print("  [+] Mapa latente guardado en 'outputs/final_latent_space.png'.")
+    
+def experiment_latent_walk(X: np.ndarray, labels: list):
+    print("\n--- EXPERIMENT: Caminata Latente (Buscando Híbridos) ---")
+    
+    seed_ganadora = 100
+    np.random.seed(seed_ganadora)
+    
+    print("  [+] Entrenando arquitectura Deep & Wide para el test de interpolación...")
+    modelo = create_deep_wide_ae()
+    
+    # Entrenamos con Adam
+    modelo_entrenado, _ = train_autoencoder(
+        modelo, X, epochs=200000,
+        optimizer=Adam(learning_rate=0.001),
+        use_pixel_stopping=False, patience=1000
+    )
+    
+    try:
+        idx_a = labels.index('a')
+        idx_h = labels.index('h')
+        
+        mitad = len(modelo_entrenado.layers) // 2
+        
+        # Obtenemos la coordenada exacta de 'a'
+        latent_a = X[idx_a].reshape(1, -1)
+        for layer in modelo_entrenado.layers[:mitad]:
+            latent_a = layer.forward(latent_a)
+        coord_a = latent_a.flatten()
+        
+        # Obtenemos la coordenada exacta de 'h'
+        latent_h = X[idx_h].reshape(1, -1)
+        for layer in modelo_entrenado.layers[:mitad]:
+            latent_h = layer.forward(latent_h)
+        coord_h = latent_h.flatten()
+        
+        print(f"\n  [+] Viajando en línea recta desde 'a' {coord_a} hasta 'h' {coord_h}...")
+        
+        # Generamos 11 pasos (del 0% al 100%)
+        pasos = 10
+        for i in range(pasos + 1):
+            alpha = i / pasos
+            # Fórmula de Interpolación Lineal: (1 - alpha)*A + alpha*H
+            punto_intermedio = (1 - alpha) * coord_a + alpha * coord_h
+            
+            filename = f"transicion_paso_{i:02d}.png"
+            Plotter.generate_new_letter(modelo_entrenado, punto_intermedio.tolist(), filename)
+            print(f"      -> Paso {i} (alpha={alpha:.1f}): Guardado como {filename}")
+    
+    except ValueError:
+        print("  [!] Error: No se encontraron las letras necesarias en el dataset.")
+        
+    print("\n  [*] ¡Caminata finalizada! Revisá los 11 archivos en la carpeta outputs.")
+    Plotter.plot_latent_walk(
+            autoencoder=modelo_entrenado,
+            X=X,
+            labels=labels,
+            coord_start=coord_a,
+            coord_end=coord_h,
+            steps=pasos,
+            title="Caminata Latente: Transición de 'a' hacia 'h'",
+            filename="transicion_mapa_ruta.png"
+        )
+        
+    print("\n  [*] ¡Caminata finalizada! Revisá los archivos en la carpeta outputs.")
+
 # =====================================================================
 # EJECUCIÓN PRINCIPAL
 # =====================================================================
@@ -702,7 +767,8 @@ def main():
     # experiment_architectures(X, caracteres)
     # experiment_learning_rates(X, caracteres)
     # experiment_phase3_optimizers(X, caracteres)
-    experiment_play_generative(X, caracteres)
+    # experiment_play_generative(X, caracteres)
+    experiment_latent_walk(X, caracteres)
 
 if __name__ == "__main__":
     main()

@@ -29,10 +29,15 @@ class Plotter:
     def plot_latent_space(autoencoder: Network, X: np.ndarray, title: str, filename: str, labels: list = None):
         """
         Grafica la representación bidimensional del espacio latente (Z) de las entradas.
-        Calcula el 'forward pass' solo hasta la capa central del autoencoder.
+        Calcula el 'forward pass' dinámicamente hasta el cuello de botella central.
         """
-        latent_space = X
-        for layer in autoencoder.layers[:4]:
+        latent_space = X.copy()
+        
+        # ARREGLO CRUCIAL: Calculamos la mitad exacta de la red
+        # Para la Deep & Wide (12 capas), esto va a dar 6 (ejecuta hasta el Tanh del cuello de botella)
+        mitad = len(autoencoder.layers) // 2
+        
+        for layer in autoencoder.layers[:mitad]:
             latent_space = layer.forward(latent_space)
 
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -550,3 +555,60 @@ class Plotter:
         plt.savefig(f"outputs/{filename}", dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  [+] Placa de fórmulas guardada en: outputs/{filename}")
+        
+    @staticmethod
+    def plot_latent_walk(autoencoder, X, labels, coord_start, coord_end, steps, title, filename):
+        """
+        Grafica el espacio latente completo y superpone una línea de interpolación 
+        (caminata latente) entre dos coordenadas específicas.
+        """
+        print("\nGenerando mapa de la Caminata Latente...")
+        
+        # 1. Obtener todas las coordenadas latentes para el fondo
+        mitad = len(autoencoder.layers) // 2
+        Z = X.copy()
+        for layer in autoencoder.layers[:mitad]:
+            Z = layer.forward(Z)
+            
+        fig, ax = plt.subplots(figsize=(10, 7))
+        
+        # Usar los colores de tu clase o defaults seguros si no existen
+        bg_color = getattr(Plotter, 'FACECOLOR', '#FFFFFF')
+        text_color = getattr(Plotter, 'TEXT_COLOR', '#333333')
+        grid_color = getattr(Plotter, 'GRID_COLOR', '#E0E0E0')
+        
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(bg_color)
+        
+        # 2. Plotear el fondo (todas las letras)
+        ax.scatter(Z[:, 0], Z[:, 1], color='#2C5282', s=50, alpha=0.6, edgecolors='white')
+        for i, label in enumerate(labels):
+            ax.annotate(label, (Z[i, 0], Z[i, 1]), xytext=(5, 5), textcoords='offset points',
+                        fontsize=11, color=text_color, alpha=0.8)
+            
+        # 3. Plotear la línea recta de interpolación
+        ax.plot([coord_start[0], coord_end[0]], [coord_start[1], coord_end[1]], 
+                color='red', linestyle='--', linewidth=2, zorder=1, label="Trayectoria de Interpolación")
+        
+        # 4. Plotear los puntos exactos de los pasos generados
+        walk_x = [(1 - i/steps)*coord_start[0] + (i/steps)*coord_end[0] for i in range(steps + 1)]
+        walk_y = [(1 - i/steps)*coord_start[1] + (i/steps)*coord_end[1] for i in range(steps + 1)]
+        
+        # Resaltamos el inicio ('a') y el fin ('h')
+        ax.scatter(walk_x[0], walk_y[0], color='green', s=100, zorder=3, label="Inicio ('a')")
+        ax.scatter(walk_x[-1], walk_y[-1], color='purple', s=100, zorder=3, label="Fin ('h')")
+        # Puntos intermedios
+        ax.scatter(walk_x[1:-1], walk_y[1:-1], color='orange', s=60, zorder=2, label="Pasos Intermedios")
+        
+        ax.set_title(title, color=text_color, pad=15, fontsize=13, fontweight='bold')
+        ax.set_xlabel("Z1", color=text_color)
+        ax.set_ylabel("Z2", color=text_color)
+        
+        ax.legend(frameon=True, facecolor=bg_color, edgecolor=grid_color)
+        ax.grid(True, linestyle=':', alpha=0.8, color=grid_color)
+        
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  [+] Mapa de ruta guardado en: {filepath}")
