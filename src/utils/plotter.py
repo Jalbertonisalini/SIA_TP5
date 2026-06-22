@@ -80,33 +80,42 @@ class Plotter:
     @staticmethod
     def generate_new_letter(autoencoder: Network, z_coord: list, filename: str):
         """
-        Inyecta una coordenada específica en el espacio latente y realiza 
-        el 'forward pass' a través del decodificador para generar una imagen sintética.
+        Inyecta coordenadas en el espacio latente y las pasa únicamente 
+        por el Decoder para generar una imagen nueva. Soporta redes profundas.
         """
-        Z = np.array([z_coord])
+        # Formateamos la entrada a (1, 2)
+        output = np.array(z_coord).reshape(1, -1)
         
-        output = Z
-        for layer in autoencoder.layers[4:]:
+        # ARREGLO: Calculamos la mitad exacta de la red dinámicamente
+        mitad_red = len(autoencoder.layers) // 2
+        
+        # Pasamos la coordenada SOLO por las capas del Decoder
+        for layer in autoencoder.layers[mitad_red:]:
             output = layer.forward(output)
             
-        image = output.reshape((7, 5))
+        # Damos forma a la matriz final de 35 píxeles a 7x5
+        img_reconstructed = output.reshape((7, 5))
         
-        fig, ax = plt.subplots(figsize=(3, 4))
+        # Renderizado
+        fig, ax = plt.subplots(figsize=(4, 4))
         fig.patch.set_facecolor(Plotter.FACECOLOR)
-        ax.imshow(image, cmap='gray_r', vmin=0, vmax=1)
-        ax.set_title(f"Generated Letter at Z={z_coord}", color=Plotter.TITLE_COLOR, pad=10)
+        
+        ax.imshow(img_reconstructed, cmap='gray_r', vmin=0, vmax=1)
+        ax.set_title(f"Latente: {z_coord}", color=Plotter.TITLE_COLOR, pad=10)
         ax.axis('off')
         
         os.makedirs('outputs', exist_ok=True)
-        fig.savefig(f'outputs/{filename}', dpi=300, bbox_inches='tight')
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
-        print(f"  [+] Imagen guardada en: outputs/{filename}")
-
+        print(f"      [+] Letra alucinada guardada en: {filepath}")
+    
+    
     @staticmethod
-    def compare_reconstruction(autoencoder: Network, original_x: np.ndarray, label: str, filename: str):
+    def compare_reconstruction(autoencoder: Network, original_x: np.ndarray, label: str, model_name: str, filename: str):
         """
-        Pasa una letra original completa por la red (Encoder + Decoder) y 
-        grafica la entrada real frente a la salida reconstruida para evaluar calidad visual.
+        Pasa una letra original completa por la red y grafica la entrada real frente a la reconstruida.
+        Incluye el nombre del modelo para que la imagen sea autodescriptiva en presentaciones.
         """
         if original_x.ndim == 1:
             original_x = original_x.reshape(1, -1)
@@ -116,18 +125,23 @@ class Plotter:
         img_original = original_x.reshape((7, 5))
         img_reconstructed = reconstructed_x.reshape((7, 5))
         
-        fig, axes = plt.subplots(1, 2, figsize=(6.5, 4.2))
+        fig, axes = plt.subplots(1, 2, figsize=(6.5, 4.5))
         fig.patch.set_facecolor(Plotter.FACECOLOR)
         
+        # Título principal con el nombre de la arquitectura
+        fig.suptitle(f"Arquitectura: {model_name}", color=Plotter.TITLE_COLOR, fontsize=14, fontweight='bold', y=0.98)
+        
         axes[0].imshow(img_original, cmap='gray_r', vmin=0, vmax=1)
-        axes[0].set_title(f"Original: '{label}'", color=Plotter.TITLE_COLOR)
+        axes[0].set_title(f"Original ('{label}')", color=Plotter.TITLE_COLOR, fontsize=12, pad=10)
         axes[0].axis('off')
         
         axes[1].imshow(img_reconstructed, cmap='gray_r', vmin=0, vmax=1)
-        axes[1].set_title(f"Predicha: '{label}'", color=Plotter.TITLE_COLOR)
+        axes[1].set_title(f"Reconstrucción", color=Plotter.TITLE_COLOR, fontsize=12, pad=10)
         axes[1].axis('off')
         
         fig.tight_layout()
+        # Bajamos un poquito los gráficos para que no se choquen con el título principal
+        fig.subplots_adjust(top=0.82)
         
         os.makedirs('outputs', exist_ok=True)
         fig.savefig(f'outputs/{filename}', dpi=300, bbox_inches='tight')
@@ -135,12 +149,8 @@ class Plotter:
         print(f"  [+] Comparación guardada en: outputs/{filename}")
 
     @staticmethod
-    def plot_architecture_comparison(resultados_loss: dict, max_epochs: int, filename: str):
-        """
-        Genera un gráfico comparativo de la convergencia (Loss vs Épocas) 
-        para distintas topologías de red, mostrando la media y desviación estándar multi-seed.
-        """
-        print("\nGenerando gráfico estadístico...")
+    def plot_architecture_comparison(resultados_loss: dict, resultados_errores: dict, max_epochs: int, filename: str):
+        print("\nGenerando gráfico estadístico de Arquitecturas...")
         fig, ax = plt.subplots(figsize=(12, 7))
         fig.patch.set_facecolor(Plotter.FACECOLOR)
         ax.set_facecolor(Plotter.FACECOLOR)
@@ -148,27 +158,32 @@ class Plotter:
 
         for (nombre, historiales), color in zip(resultados_loss.items(), Plotter.SERIES_COLORS):
             matriz_historiales = np.array(historiales)
+            
             loss_promedio = np.mean(matriz_historiales, axis=0)
             loss_std = np.std(matriz_historiales, axis=0)
             epocas_x = np.arange(max_epochs)
 
-            ax.plot(epocas_x, loss_promedio, label=f"{nombre} (Media)", color=color, linewidth=1.5)
+            bce_final_promedio = np.mean(matriz_historiales[:, -1])
+            err_px_promedio = np.mean(resultados_errores[nombre])
+            err_px_std = np.std(resultados_errores[nombre])
+
+            # Etiqueta enriquecida idéntica a la Fase 3
+            etiqueta = (f"{nombre}\n"
+                        f"BCE: {bce_final_promedio:.4f} | Err Px: {err_px_promedio:.1f} ± {err_px_std:.1f}")
+
+            ax.plot(epocas_x, loss_promedio, label=etiqueta, color=color, linewidth=1.5)
             ax.fill_between(
-                epocas_x,
-                loss_promedio - loss_std,
-                loss_promedio + loss_std,
-                color=color,
-                alpha=0.10,
-                edgecolor='none'
+                epocas_x, loss_promedio - loss_std, loss_promedio + loss_std,
+                color=color, alpha=0.10, edgecolor='none'
             )
 
-        ax.set_title("Convergencia Multi-Seed: Comparativa de Arquitecturas (5 Runs)", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
+        ax.set_title("Convergencia Multi-Seed: Comparativa de Arquitecturas", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
         ax.set_xlabel("Épocas", color=Plotter.TEXT_COLOR, fontsize=11)
         ax.set_ylabel("Loss Promedio (BCE)", color=Plotter.TEXT_COLOR, fontsize=11)
         
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k' if x >= 1000 else int(x)))
         
-        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR)
+        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR, fontsize=9)
         ax.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
@@ -248,60 +263,7 @@ class Plotter:
         print(f"  [+] Gráfico guardado en: {filepath}")
         
     @staticmethod
-    def plot_dataset_capacity_comparison(sizes: np.ndarray, mean_pixels: np.ndarray, pixeles_std: np.ndarray, loss_media: np.ndarray, loss_std: np.ndarray, filename: str):
-        """
-        Genera un panel dual (Subplots) para el Stress Test del cuello de botella.
-        Muestra la degradación del error de píxeles (Panel Superior) y del error matemático BCE (Panel Inferior).
-        """
-        print("\nGenerando gráfico de Capacidad...")
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-        fig.patch.set_facecolor(Plotter.FACECOLOR)
-
-        color_pixeles = Plotter.SERIES_COLORS[1] # Rojo Ladrillo
-        color_loss = Plotter.SERIES_COLORS[0]    # Azul Marino
-
-        # --- PANEL SUPERIOR ---
-        ax1.set_facecolor(Plotter.FACECOLOR)
-        ax1.set_axisbelow(True)
-        ax1.set_title("Stress Test: Colapso del Espacio Latente 2D", pad=15, fontsize=13, color=Plotter.TITLE_COLOR)
-        ax1.set_ylabel('Max Píxeles Incorrectos', color=color_pixeles, fontsize=11)
-        
-        ax1.plot(sizes, mean_pixels, marker='o', markersize=6, color=color_pixeles, linewidth=1.5, label="Promedio Píxeles Errados")
-        ax1.fill_between(sizes, np.maximum(0, mean_pixels - pixeles_std), mean_pixels + pixeles_std, color=color_pixeles, alpha=0.10, edgecolor='none')
-        
-        ax1.axhline(y=1, color='gray', linestyle='--', alpha=0.7, label="Umbral de Viabilidad (<= 1 píxel)")
-        ax1.legend(loc='upper left', frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR)
-        ax1.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
-
-        # --- PANEL INFERIOR ---
-        ax2.set_facecolor(Plotter.FACECOLOR)
-        ax2.set_axisbelow(True)
-        ax2.set_xlabel('Cantidad de Letras en el Dataset (N)', color=Plotter.TEXT_COLOR, fontsize=11)
-        ax2.set_ylabel('Loss Promedio (BCE)', color=color_loss, fontsize=11)
-        
-        ax2.plot(sizes, loss_media, marker='s', markersize=6, color=color_loss, linewidth=1.5, label="Loss Promedio")
-        ax2.fill_between(sizes, loss_media - loss_std, loss_media + loss_std, color=color_loss, alpha=0.10, edgecolor='none')
-        
-        ax2.legend(loc='upper left', frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR)
-        ax2.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
-
-        for ax in [ax1, ax2]:
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.spines['left'].set_color(Plotter.GRID_COLOR)
-            ax.spines['bottom'].set_color(Plotter.GRID_COLOR)
-            ax.tick_params(colors=Plotter.TEXT_COLOR)
-
-        fig.tight_layout()
-        
-        os.makedirs('outputs', exist_ok=True)
-        filepath = f'outputs/{filename}'
-        fig.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"  [+] Gráfico guardado en: {filepath}")
-        
-    @staticmethod
-    def plot_optimizer_comparison(resultados_loss: dict, filename: str):
+    def plot_optimizer_comparison(resultados_loss: dict, resultados_errores: dict, filename: str):
         """
         Traza la convergencia con eje X dinámico para comparar algoritmos de optimización.
         El largo de cada serie se determina por la época en que la ejecución satisfizo la condición de corte.
@@ -317,13 +279,29 @@ class Plotter:
 
         for (nombre, historiales), color in zip(resultados_loss.items(), colores):
             matriz_historiales = np.array(historiales)
+            
+            # --- CÁLCULO DEL DESVÍO EN EL TIEMPO (Tus cálculos estaban perfectos) ---
             loss_promedio = np.mean(matriz_historiales, axis=0)
             loss_std = np.std(matriz_historiales, axis=0)
-            
             epocas_x = np.arange(len(loss_promedio))
-
-            ax.plot(epocas_x, loss_promedio, label=f"{nombre} (Media)", color=color, linewidth=1.5)
             
+            # --- CÁLCULO DE MÉTRICAS FINALES PARA LA LEYENDA ---
+            # Agarramos solo la última época ([-1]) de todas las semillas para el promedio final
+            bce_final_promedio = np.mean(matriz_historiales[:, -1])
+            bce_final_std = np.std(matriz_historiales[:, -1])
+            
+            err_px_promedio = np.mean(resultados_errores[nombre])
+            err_px_std = np.std(resultados_errores[nombre])
+            
+            # Armamos una etiqueta limpia que muestra el nombre y debajo los promedios
+            etiqueta = (f"{nombre}\n"
+                        f"BCE Final: {bce_final_promedio:.4f} ± {bce_final_std:.4f}\n"
+                        f"Err Píxeles: {err_px_promedio:.1f} ± {err_px_std:.1f}")
+
+            # Dibujamos la línea principal
+            ax.plot(epocas_x, loss_promedio, label=etiqueta, color=color, linewidth=1.5)
+            
+            # Dibujamos el área de desvío (sombra)
             ax.fill_between(
                 epocas_x, 
                 loss_promedio - loss_std, 
@@ -339,7 +317,9 @@ class Plotter:
         
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k' if x >= 1000 else int(x)))
 
-        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR, loc='upper right')
+        # Ajuste en la leyenda para acomodar el texto enriquecido
+        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, 
+                  labelcolor=Plotter.TEXT_COLOR, loc='upper right', fontsize=9)
         
         ax.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
         
@@ -356,176 +336,217 @@ class Plotter:
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"  [+] Gráfico guardado en: {filepath}")
-        
-        
+          
     @staticmethod
-    def plot_subset_orthogonality_comparison(resultados_loss: dict, filename: str):
+    def plot_single_loss_curve(loss_history: list, title: str, filename: str):
         """
-        Grafica la convergencia de dos subsets distintos para demostrar 
-        el impacto de la ortogonalidad de los datos en el Descenso de Gradiente.
-        """
-        print("\nGenerando gráfico de Calidad de Datos (Ortogonalidad)...")
-        fig, ax = plt.subplots(figsize=(10, 6))
+        Generates a single BCE loss curve to visualize asymptotic stagnation.
         
+        Args:
+            loss_history (list): Array of loss values per epoch.
+            title (str): Title of the plot.
+            filename (str): Output filename.
+        """
+        print(f"\nGenerating Loss curve for {title}...")
+        fig, ax = plt.subplots(figsize=(8, 5))
         fig.patch.set_facecolor(Plotter.FACECOLOR)
         ax.set_facecolor(Plotter.FACECOLOR)
         ax.set_axisbelow(True)
 
-        # Rojo para el difícil (Similar), Azul Marino para el fácil (Ortogonal)
-        colores = [Plotter.SERIES_COLORS[1], Plotter.SERIES_COLORS[0]] 
+        epochs_x = np.arange(len(loss_history))
+        # Usamos el color principal (Azul Marino) de tu paleta
+        ax.plot(epochs_x, loss_history, color=Plotter.SERIES_COLORS[0], linewidth=2.0)
 
-        for (nombre, historiales), color in zip(resultados_loss.items(), colores):
-            matriz_historiales = np.array(historiales)
-            loss_promedio = np.mean(matriz_historiales, axis=0)
-            loss_std = np.std(matriz_historiales, axis=0)
-            
-            epocas_x = np.arange(len(loss_promedio))
-
-            ax.plot(epocas_x, loss_promedio, label=f"{nombre}", color=color, linewidth=1.5)
-            ax.fill_between(
-                epocas_x, 
-                loss_promedio - loss_std, 
-                loss_promedio + loss_std, 
-                color=color, 
-                alpha=0.10, 
-                edgecolor='none'
-            )
-
-        ax.set_title("Impacto de la Ortogonalidad del Dataset en SGD", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
-        ax.set_xlabel("Épocas", color=Plotter.TEXT_COLOR, fontsize=11)
-        ax.set_ylabel("Loss Promedio (BCE)", color=Plotter.TEXT_COLOR, fontsize=11)
+        ax.set_title(title, color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
+        ax.set_xlabel("Epochs", color=Plotter.TEXT_COLOR, fontsize=11)
+        ax.set_ylabel("Loss (BCE)", color=Plotter.TEXT_COLOR, fontsize=11)
         
+        # Formateo del eje X para miles (k)
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1000)}k' if x >= 1000 else int(x)))
-
-        ax.legend(frameon=True, facecolor=Plotter.FACECOLOR, edgecolor=Plotter.GRID_COLOR, labelcolor=Plotter.TEXT_COLOR)
         ax.grid(True, linestyle=':', alpha=0.8, color=Plotter.GRID_COLOR)
         
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color(Plotter.GRID_COLOR)
-        ax.spines['bottom'].set_color(Plotter.GRID_COLOR)
+        for spine in ['top', 'right']: ax.spines[spine].set_visible(False)
+        for spine in ['left', 'bottom']: ax.spines[spine].set_color(Plotter.GRID_COLOR)
         ax.tick_params(colors=Plotter.TEXT_COLOR)
         
         fig.tight_layout()
-        
-        import os
         os.makedirs('outputs', exist_ok=True)
         filepath = f'outputs/{filename}'
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
-        print(f"  [+] Gráfico guardado en: {filepath}")
-        
+        print(f"  [+] Curva guardada en: {filepath}")
+
     @staticmethod
-    def plot_similarity_matrix(X: np.ndarray, labels: list, filename: str):
+    def plot_pixel_errors(original_x: np.ndarray, predicted_x: np.ndarray, label: str, filename: str):
         """
-        Calcula y grafica la matriz de Similitud Coseno (Heatmap) entre todos los caracteres.
-        1.0 (Color oscuro) = Caracteres idénticos.
-        0.0 (Color blanco) = Caracteres ortogonales (sin píxeles compartidos).
-        """
-        print("\nGenerando Mapa de Calor de Ortogonalidad...")
+        Creates a side-by-side comparison highlighting thresholded pixel errors.
+        Displays the Original, the Continuous Prediction, and a Red Error Heatmap.
         
-        # 1. Cálculo matemático de la similitud coseno
-        norms = np.linalg.norm(X, axis=1, keepdims=True)
-        X_norm = X / np.where(norms == 0, 1e-10, norms)
-        sim_matrix = np.dot(X_norm, X_norm.T)
-
-        # 2. Configuración del lienzo
-        fig, ax = plt.subplots(figsize=(11, 9))
+        Args:
+            original_x (np.ndarray): The ground truth letter array.
+            predicted_x (np.ndarray): The raw continuous output from the network.
+            label (str): The character label.
+            filename (str): Output filename.
+        """
+        if original_x.ndim == 1: original_x = original_x.reshape(1, -1)
+        if predicted_x.ndim == 1: predicted_x = predicted_x.reshape(1, -1)
+        
+        img_orig = original_x.reshape((7, 5))
+        img_pred = predicted_x.reshape((7, 5))
+        
+        # Umbralizamos para ver qué decisión binaria final tomó la red
+        img_pred_bin = (img_pred >= 0.5).astype(int)
+        
+        # Matriz de errores: 1 donde difiere de la original, 0 donde acierta
+        img_errores = np.abs(img_orig - img_pred_bin)
+        total_errors = np.sum(img_errores)
+        
+        fig, axes = plt.subplots(1, 3, figsize=(9, 4))
         fig.patch.set_facecolor(Plotter.FACECOLOR)
-        ax.set_facecolor(Plotter.FACECOLOR)
-
-        # 3. Dibujamos el Heatmap (Usamos 'Blues' para estilo académico)
-        cax = ax.imshow(sim_matrix, cmap='Blues', vmin=0, vmax=1)
-
-        # 4. Formateo de los ejes para mostrar las letras
-        ax.set_xticks(np.arange(len(labels)))
-        ax.set_yticks(np.arange(len(labels)))
-        ax.set_xticklabels(labels, fontsize=9, color=Plotter.TEXT_COLOR)
-        ax.set_yticklabels(labels, fontsize=9, color=Plotter.TEXT_COLOR)
-
-        # Ocultamos las marcas de los ticks (las rayitas) pero dejamos las letras
-        ax.tick_params(axis='both', which='both', length=0)
-
-        # 5. Barra de colores lateral (Leyenda)
-        cbar = fig.colorbar(cax, ax=ax, shrink=0.82, pad=0.04)
-        cbar.ax.tick_params(labelsize=10, colors=Plotter.TEXT_COLOR)
-        cbar.set_label('Similitud Coseno (0 = Ortogonal, 1 = Idéntico)', color=Plotter.TEXT_COLOR, fontsize=11, labelpad=15)
-
-        ax.set_title("Matriz de Ortogonalidad y Similitud entre Caracteres", color=Plotter.TITLE_COLOR, pad=20, fontsize=14, fontweight='bold')
-
-        # Limpiamos todos los bordes
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-
+        
+        # Panel 1: Original
+        axes[0].imshow(img_orig, cmap='gray_r', vmin=0, vmax=1)
+        axes[0].set_title(f"Original: '{label}'", color=Plotter.TITLE_COLOR)
+        
+        # Panel 2: Predicción Continua (Para ver la inseguridad/grises)
+        axes[1].imshow(img_pred, cmap='gray_r', vmin=0, vmax=1) 
+        axes[1].set_title("Reconstructed", color=Plotter.TITLE_COLOR)
+        
+        # Panel 3: Mapa de Errores (Rojo puro donde se equivocó)
+        # Usamos cmap='Reds' para que el 1 resalte fuerte
+        axes[2].imshow(img_errores, cmap='Reds', vmin=0, vmax=1)
+        axes[2].set_title(f"Errors: {int(total_errors)} pixels", color=Plotter.TITLE_COLOR, fontweight='bold')
+        
+        for ax in axes: ax.axis('off')
+        
         fig.tight_layout()
-        
-        import os
         os.makedirs('outputs', exist_ok=True)
         filepath = f'outputs/{filename}'
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
-        print(f"  [+] Matriz guardada en: {filepath}")
+        print(f"  [+] Mapa de errores guardado en: {filepath}")
         
     @staticmethod
-    def plot_subset_orthogonality_heatmaps(X_sim: np.ndarray, labels_sim: list, X_ortho: np.ndarray, labels_ortho: list, filename: str):
+    def plot_dataset_grid(X: np.ndarray, labels: list, filename: str = "dataset_grid.png"):
         """
-        Calcula y grafica dos matrices de similitud de 5x5 lado a lado.
-        Permite visualizar numéricamente por qué un subset es más difícil que el otro.
-        """
-        print("\nGenerando Mapas de Calor para los Subsets...")
+        Genera una plancha visual con todos los caracteres del dataset original.
+        Dibuja una grilla de 4 filas x 8 columnas.
         
-        # Función auxiliar para la matemática
-        def calcular_similitud(X):
-            norms = np.linalg.norm(X, axis=1, keepdims=True)
-            X_norm = X / np.where(norms == 0, 1e-10, norms)
-            return np.dot(X_norm, X_norm.T)
-
-        sim_matrix_sim = calcular_similitud(X_sim)
-        sim_matrix_ortho = calcular_similitud(X_ortho)
-
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
-        fig.patch.set_facecolor(Plotter.FACECOLOR)
-
-        # --- PANEL IZQUIERDO: Subset Similar (Rojos) ---
-        axes[0].set_facecolor(Plotter.FACECOLOR)
-        axes[0].imshow(sim_matrix_sim, cmap='Reds', vmin=0, vmax=1)
-        axes[0].set_title("Subset Similar (Difícil)", color=Plotter.TITLE_COLOR, pad=15, fontsize=12, fontweight='bold')
-        axes[0].set_xticks(np.arange(len(labels_sim)))
-        axes[0].set_yticks(np.arange(len(labels_sim)))
-        axes[0].set_xticklabels(labels_sim, fontsize=12, color=Plotter.TEXT_COLOR)
-        axes[0].set_yticklabels(labels_sim, fontsize=12, color=Plotter.TEXT_COLOR)
-
-        # --- PANEL DERECHO: Subset Ortogonal (Azules) ---
-        axes[1].set_facecolor(Plotter.FACECOLOR)
-        axes[1].imshow(sim_matrix_ortho, cmap='Blues', vmin=0, vmax=1)
-        axes[1].set_title("Subset Ortogonal (Fácil)", color=Plotter.TITLE_COLOR, pad=15, fontsize=12, fontweight='bold')
-        axes[1].set_xticks(np.arange(len(labels_ortho)))
-        axes[1].set_yticks(np.arange(len(labels_ortho)))
-        axes[1].set_xticklabels(labels_ortho, fontsize=12, color=Plotter.TEXT_COLOR)
-        axes[1].set_yticklabels(labels_ortho, fontsize=12, color=Plotter.TEXT_COLOR)
-
-        # Imprimimos los números adentro de los cuadrados para ambos paneles
-        for i in range(len(labels_sim)):
-            for j in range(len(labels_sim)):
-                # Para la matriz similar (Rojos)
-                color_texto_sim = "white" if sim_matrix_sim[i, j] > 0.55 else Plotter.TEXT_COLOR
-                axes[0].text(j, i, f"{sim_matrix_sim[i, j]:.2f}", ha="center", va="center", color=color_texto_sim, fontsize=10)
+        Args:
+            X (np.ndarray): Matriz del dataset completo (32 x 35).
+            labels (list): Lista con las etiquetas de los caracteres.
+            filename (str): Nombre del archivo de salida.
+        """
+        print("\nGenerating Dataset Grid...")
+        # Creamos una grilla de 4x8. El tamaño (12, 7) da una buena proporción para PowerPoint
+        fig, axes = plt.subplots(4, 8, figsize=(12, 7))
+        
+        # Opcional: Si querés usar el fondo oscuro de tu paleta, descomentá estas líneas
+        # fig.patch.set_facecolor(Plotter.FACECOLOR)
+        
+        for i, ax in enumerate(axes.flat):
+            if i < len(X):
+                # Volvemos a armar la matriz 2D de 7x5 para la visualización
+                img = X[i].reshape((7, 5))
+                ax.imshow(img, cmap='gray_r', vmin=0, vmax=1)
                 
-                # Para la matriz ortogonal (Azules)
-                color_texto_ortho = "white" if sim_matrix_ortho[i, j] > 0.55 else Plotter.TEXT_COLOR
-                axes[1].text(j, i, f"{sim_matrix_ortho[i, j]:.2f}", ha="center", va="center", color=color_texto_ortho, fontsize=10)
-
-        # Limpieza visual de ambos ejes
-        for ax in axes:
-            ax.tick_params(axis='both', which='both', length=0) # Saca las rayitas
-            for spine in ax.spines.values():
-                spine.set_visible(False)
-
+                # Opcional: Color del título para que contraste si usás fondo oscuro
+                # ax.set_title(f"'{labels[i]}'", color=Plotter.TITLE_COLOR, fontsize=14)
+                ax.set_title(f"'{labels[i]}'", fontsize=14, fontweight='bold')
+            
+            # Ocultamos los ejes para que quede como una plancha limpia
+            ax.axis('off')
+            
         fig.tight_layout()
-        
-        import os
         os.makedirs('outputs', exist_ok=True)
         filepath = f'outputs/{filename}'
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
         plt.close(fig)
-        print(f"  [+] Matrices guardadas en: {filepath}")
+        print(f"  [+] Plancha del dataset guardada en: {filepath}")
+        
+    @staticmethod
+    def plot_capacity_limit_with_error(sizes: list, errors_mean: list, errors_std: list, similarities: list, filename: str):
+        print("\nGenerating Capacity Limit Plot with Orthogonality Metric...")
+        fig, ax1 = plt.subplots(figsize=(9, 5))
+        
+        # Eje Y izquierdo: Barras de Errores (promedio + desviación estándar)
+        # Usamos errors_mean para la altura y errors_std para el "yerr" (el bigote)
+        color_bar = Plotter.SERIES_COLORS[0]
+        bars = ax1.bar(sizes, errors_mean, yerr=errors_std, capsize=5, 
+                       color=color_bar, width=2.0, alpha=0.8, label="Error (Promedio ± Desvío)")
+        
+        ax1.axhline(y=1, color='red', linestyle='--', linewidth=2, label="Tolerancia Máxima (1 píxel)")
+        
+        ax1.set_xlabel("Tamaño del Subset (N Letras)", color=Plotter.TEXT_COLOR, fontweight='bold')
+        ax1.set_ylabel("Max Píxeles de Error", color=color_bar, fontweight='bold')
+        ax1.set_xticks(sizes)
+        ax1.tick_params(axis='y', labelcolor=color_bar)
+        
+        # Anotaciones en las barras (usando el promedio)
+        for bar in bars:
+            height = bar.get_height()
+            ax1.annotate(f'{height:.1f}', # Usamos .1f porque el promedio puede tener decimales
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3), textcoords="offset points",
+                        ha='center', va='bottom', color=color_bar, fontweight='bold')
+
+        # Eje Y derecho: Curva de Similitud (Naranja)
+        ax2 = ax1.twinx()
+        color_line = '#E67E22' 
+        ax2.plot(sizes, similarities, color=color_line, marker='o', linewidth=2.5, markersize=8, label="Similitud Máxima (Peor Par)")
+        ax2.set_ylabel("Similitud (ortogonalidad)", color=color_line, fontweight='bold')
+        ax2.tick_params(axis='y', labelcolor=color_line)
+        ax2.set_ylim(0, 1.1) # Un poquito más de margen para que no toque el borde
+
+        # Título y grilla
+        ax1.set_title("Límite de Capacidad SGD y Colapso por Similitud", color=Plotter.TITLE_COLOR, pad=15, fontsize=13)
+        ax1.grid(True, linestyle=':', alpha=0.5)
+        
+        # --- CORRECCIÓN AQUÍ ---
+        # Unificamos leyendas capturando los handles y labels de ambos ejes
+        lines_1, labels_1 = ax1.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        # Ahora unimos los de la izquierda (ax1) con los de la derecha (ax2)
+        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left')
+        # -----------------------
+        
+        fig.tight_layout()
+        os.makedirs('outputs', exist_ok=True)
+        filepath = f'outputs/{filename}'
+        fig.savefig(filepath, dpi=300)
+        plt.close(fig)
+        print(f"  [+] Gráfico de capacidad guardado en: {filepath}")
+
+    @staticmethod
+    def plot_formula_plate(filename="formula_plate.png"):
+        """Genera una imagen profesional con las fórmulas justificativas."""
+        fig = plt.figure(figsize=(9, 4))
+        fig.patch.set_facecolor('#F8F9F9')
+        ax = plt.gca()
+        ax.axis('off')
+        
+        # Separamos el texto descriptivo (negrita normal) de la fórmula (LaTeX puro)
+        # Esto evita que el parser de Matplotlib se vuelva loco con los comandos de estilo
+        items = [
+            ("1. Producto Punto (Hopfield):", r"$x \cdot y = \sum_{i=1}^{35} x_i y_i$"),
+            ("2. Norma L2 (Magnitud):", r"$\|x\| = \sqrt{\sum_{i=1}^{35} x_i^2}$"),
+            ("3. Similitud Coseno:", r"$\text{Sim}(x, y) = \frac{x \cdot y}{\|x\| \|y\|} = \cos(\theta)$")
+        ]
+        
+        y_pos = 0.8
+        for label, formula in items:
+            # Dibujamos el texto plano en negrita
+            plt.text(0.05, y_pos, label, fontsize=14, color='#2C3E50', fontweight='bold')
+            # Dibujamos la fórmula en la línea de abajo o al lado
+            plt.text(0.40, y_pos, formula, fontsize=16, color='#1A5276')
+            y_pos -= 0.25
+            
+        plt.text(0.05, 0.1, 
+                 "Nota: La normalización elimina el sesgo por densidad de píxeles.", 
+                 fontsize=11, color='#7F8C8D', fontstyle='italic')
+        
+        plt.tight_layout()
+        os.makedirs('outputs', exist_ok=True)
+        plt.savefig(f"outputs/{filename}", dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"  [+] Placa de fórmulas guardada en: outputs/{filename}")
