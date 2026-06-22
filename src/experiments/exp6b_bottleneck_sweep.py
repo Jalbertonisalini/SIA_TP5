@@ -4,7 +4,7 @@ EXP6b: DAE – Barrido del Cuello de Botella (Bottleneck Sweep)
 Fija la arquitectura externa del ganador (35→32→16→B→16→32→35)
 y varía el tamaño del cuello de botella B ∈ {2, 4, 6, 8, 10}.
 
-Protocolo: ruido online (25%), evaluación en ruido fresco, 5 semillas, Adam lr=0.001.
+Protocolo: ruido online (25%), evaluación en ruido fresco, 10 semillas, Adam lr=0.01, plateau early stopping.
 """
 
 import numpy as np
@@ -33,6 +33,17 @@ FACECOLOR   = "#FFFFFF"
 GRID_COLOR  = "#E6E6E6"
 TITLE_COLOR = "#000000"
 TEXT_COLOR  = "#333333"
+
+# =====================================================================
+# CONSTANTES
+# =====================================================================
+
+NOISE_LEVEL   = 0.25
+MAX_EPOCHS    = 50000
+PLATEAU_CHECK = 1000
+PLATEAU_EPS   = 1e-4
+LR            = 0.01
+SEEDS         = [42, 100, 200, 500, 800, 1024, 1337, 2024, 3000, 9999]
 
 # =====================================================================
 # HELPERS
@@ -70,29 +81,35 @@ def create_deep_with_bottleneck(b: int) -> Network:
 # ENTRENAMIENTO (ruido online, mismo protocolo que exp6)
 # =====================================================================
 
-def train_dae(b: int, X_clean: np.ndarray, noise_level: float,
-              epochs: int, lr: float) -> tuple:
-    ae = create_deep_with_bottleneck(b)
-    loss_fn = BCE()
-    optimizer = Adam(learning_rate=lr)
-    history = []
+def train_dae(b: int, X_clean: np.ndarray) -> tuple:
+    ae        = create_deep_with_bottleneck(b)
+    loss_fn   = BCE()
+    optimizer = Adam(learning_rate=LR)
+    history   = []
+    converged = MAX_EPOCHS
 
-    for _ in range(epochs):
-        X_noisy = add_noise(X_clean, noise_level)
+    for epoch in range(1, MAX_EPOCHS + 1):
+        X_noisy   = add_noise(X_clean, NOISE_LEVEL)
         predicted = ae.forward(X_noisy)
-        loss = loss_fn.calculate(expected=X_clean, predicted=predicted)
+        loss      = loss_fn.calculate(expected=X_clean, predicted=predicted)
         history.append(loss)
-        grad = loss_fn.derivative(expected=X_clean, predicted=predicted)
+        grad      = loss_fn.derivative(expected=X_clean, predicted=predicted)
         ae.backward(grad, optimizer)
 
-    return ae, history
+        if epoch >= 2 * PLATEAU_CHECK and epoch % PLATEAU_CHECK == 0:
+            recent = np.mean(history[-PLATEAU_CHECK:])
+            prev   = np.mean(history[-2 * PLATEAU_CHECK:-PLATEAU_CHECK])
+            if prev - recent < PLATEAU_EPS:
+                converged = epoch
+                break
+
+    return ae, history, converged
 
 # =====================================================================
 # EXPERIMENTO
 # =====================================================================
 
-def run_sweep(X: np.ndarray, bottlenecks: list, noise_level: float,
-              epochs: int, lr: float, seeds: list) -> dict:
+def run_sweep(X: np.ndarray, bottlenecks: list) -> dict:
     loss_fn = BCE()
     results = {}
 
@@ -106,19 +123,20 @@ def run_sweep(X: np.ndarray, bottlenecks: list, noise_level: float,
         best_loss    = float('inf')
         vis_noisy    = None
 
-        for i, seed in enumerate(seeds):
+        for seed in SEEDS:
             print(f"   Seed {seed:4d} ...", end="", flush=True)
             np.random.seed(seed)
-            model, history = train_dae(b, X, noise_level, epochs, lr)
+            model, history, converged = train_dae(b, X)
 
             np.random.seed(seed + 50000)
-            X_noisy_test = add_noise(X, noise_level)
+            X_noisy_test = add_noise(X, NOISE_LEVEL)
 
             pred       = model.forward(X_noisy_test)
             px_err     = evaluate_pixel_diff(X, pred)
             final_loss = loss_fn.calculate(expected=X, predicted=pred)
 
-            print(f"  Loss={final_loss:.5f}  MaxPx={px_err:.0f}")
+            tag = "OK" if converged < MAX_EPOCHS else "NO"
+            print(f"  {tag} ({converged} épocas)  MaxPx={px_err:.0f}  BCE={final_loss:.5f}")
             histories.append(history)
             pixel_errors.append(px_err)
             bce_finals.append(final_loss)
@@ -126,8 +144,7 @@ def run_sweep(X: np.ndarray, bottlenecks: list, noise_level: float,
             if final_loss < best_loss:
                 best_loss  = final_loss
                 best_model = model
-            if i == 0:
-                vis_noisy = X_noisy_test
+                vis_noisy  = X_noisy_test
 
         max_len   = max(len(h) for h in histories)
         histories = [h + [h[-1]] * (max_len - len(h)) for h in histories]
@@ -224,7 +241,7 @@ def plot_metrics_vs_bottleneck(results: dict, noise_level: float, filename: str)
     ax1.set_title(
         f"DAE – Efecto del Tamaño de Cuello de Botella\n"
         f"Estructura fija: 35→32→16→B→16→32→35  |  Ruido={int(noise_level*100)}%  |  "
-        f"Adam lr=0.001  |  5 Semillas",
+        f"Adam lr=0.01  |  10 Semillas",
         color=TITLE_COLOR, pad=12, fontsize=12
     )
     ax1.set_ylabel("Max Píxeles Incorrectos", color=TEXT_COLOR, fontsize=11)
@@ -340,18 +357,13 @@ def main():
     print(f"Dataset: {X.shape[0]} caracteres × {X.shape[1]} píxeles\n")
 
     BOTTLENECKS    = [2, 4, 6, 8, 10]
-    NOISE_LEVEL    = 0.25
-    EPOCHS         = 10000
-    LR             = 0.001
-    SEEDS          = [42, 100, 800, 1024, 2024]
-    # Índices: 1='a', 7='g', 13='m'
     LETTER_INDICES = [1, 7, 13]
 
     print(f"Bottlenecks a probar: {BOTTLENECKS}")
-    print(f"Ruido={int(NOISE_LEVEL*100)}% | Épocas={EPOCHS} | Adam lr={LR} | "
+    print(f"Ruido={int(NOISE_LEVEL*100)}% | MaxÉpocas={MAX_EPOCHS} | Adam lr={LR} | "
           f"Semillas={SEEDS}\n")
 
-    results = run_sweep(X, BOTTLENECKS, NOISE_LEVEL, EPOCHS, LR, SEEDS)
+    results = run_sweep(X, BOTTLENECKS)
 
     plot_convergence(results, "exp6b_bottleneck_convergence.png")
     plot_metrics_vs_bottleneck(results, NOISE_LEVEL, "exp6b_bottleneck_metrics.png")

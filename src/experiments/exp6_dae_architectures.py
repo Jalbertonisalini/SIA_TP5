@@ -5,7 +5,7 @@ Protocolo:
   - Ruido ONLINE: nuevo patrón de ruido en cada época
   - Evaluación en ruido fijo independiente (seed)
   - Early stopping cuando max_pixel_error_eval == 0
-  - Adam lr=0.001, 5 semillas
+  - Adam lr=0.01, 10 semillas
 
 Arquitecturas:
   AE Winner  35→16→2→16→35    baseline del AE básico
@@ -48,8 +48,8 @@ NOISE_LEVEL   = 0.25
 MAX_EPOCHS    = 50000
 PLATEAU_CHECK = 1000   # chequear plateau cada N épocas
 PLATEAU_EPS   = 1e-4   # mejora mínima en BCE para no considerar plateau
-LR            = 0.001
-SEEDS         = [42, 100, 800, 1024, 2024]
+LR            = 0.01
+SEEDS         = [42, 100, 200, 500, 800, 1024, 1337, 2024, 3000, 9999]
 
 # ── Arquitecturas ─────────────────────────────────────────────────────
 
@@ -194,8 +194,7 @@ def run_comparison(X: np.ndarray) -> dict:
             if bce < best_bce:
                 best_bce   = bce
                 best_model = model
-            if i == 0:
-                vis_noisy = X_noisy_eval
+                vis_noisy  = X_noisy_eval   # misma seed que el mejor modelo
 
         print(f"   → Épocas: {np.mean(epochs_list):.0f}±{np.std(epochs_list):.0f} | "
               f"MaxPx: {np.mean(px_list):.1f}±{np.std(px_list):.1f} | "
