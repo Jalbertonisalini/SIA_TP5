@@ -8,10 +8,11 @@ Protocolo:
   - Adam lr=0.01, 10 semillas
 
 Arquitecturas:
-  AE Winner  35→16→2→16→35    baseline del AE básico
-  Base       35→16→10→16→35   mismo shape, bottleneck más grande
-  Wide       35→24→10→24→35   más ancho
-  Wide-16    35→24→16→24→35   bottleneck aún más grande
+  AE Winner (2)      35→16→2→16→35        baseline del AE básico (shallow)
+  AE Deep (32-16-2)  35→32→16→2→16→32→35  ganadora del AE (deep)
+  Base (16-10-16)    35→16→10→16→35        mismo shape, bottleneck más grande
+  Wide (24-10-24)    35→24→10→24→35        más ancho
+  Wide (24-16-24)    35→24→16→24→35        bottleneck aún más grande
 """
 
 import numpy as np
@@ -37,10 +38,11 @@ TITLE_COLOR = "#000000"
 TEXT_COLOR  = "#333333"
 
 SERIES_COLORS = {
-    "AE Winner (2)":    "#A63636",
-    "Base (16-10-16)":  "#595959",
-    "Wide (24-10-24)":  "#2E7559",
-    "Wide (24-16-24)":  "#1F4E79",
+    "AE Winner (2)":       "#A63636",
+    "AE Deep (32-16-2)":   "#C47A00",
+    "Base (16-10-16)":     "#595959",
+    "Wide (24-10-24)":     "#2E7559",
+    "Wide (24-16-24)":     "#1F4E79",
 }
 
 # ── Constantes ────────────────────────────────────────────────────────
@@ -60,6 +62,17 @@ def create_ae_winner() -> Network:
     ae.add(Linear(16,  2)); ae.add(ActivationLayer(Tanh()))
     ae.add(Linear( 2, 16)); ae.add(ActivationLayer(Tanh()))
     ae.add(Linear(16, 35)); ae.add(ActivationLayer(Sigmoid()))
+    return ae
+
+def create_ae_deep_winner() -> Network:
+    """35 → 32 → 16 → 2 → 16 → 32 → 35  (ganadora del AE básico — deep)"""
+    ae = Network()
+    ae.add(Linear(35, 32)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(32, 16)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16,  2)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear( 2, 16)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(16, 32)); ae.add(ActivationLayer(Tanh()))
+    ae.add(Linear(32, 35)); ae.add(ActivationLayer(Sigmoid()))
     return ae
 
 def create_base_dae() -> Network:
@@ -90,17 +103,19 @@ def create_wide16_dae() -> Network:
     return ae
 
 ARCHITECTURES = {
-    "AE Winner (2)":   create_ae_winner,
-    "Base (16-10-16)": create_base_dae,
-    "Wide (24-10-24)": create_wide_dae,
-    "Wide (24-16-24)": create_wide16_dae,
+    "AE Winner (2)":     create_ae_winner,
+    "AE Deep (32-16-2)": create_ae_deep_winner,
+    "Base (16-10-16)":   create_base_dae,
+    "Wide (24-10-24)":   create_wide_dae,
+    "Wide (24-16-24)":   create_wide16_dae,
 }
 
 ARCH_FULL_NAMES = {
-    "AE Winner (2)":   "AE Winner\n35→16→2→16→35",
-    "Base (16-10-16)": "Base\n35→16→10→16→35",
-    "Wide (24-10-24)": "Wide\n35→24→10→24→35",
-    "Wide (24-16-24)": "Wide-16\n35→24→16→24→35",
+    "AE Winner (2)":     "AE Winner\n35→16→2→16→35",
+    "AE Deep (32-16-2)": "AE Deep\n35→32→16→2→16→32→35",
+    "Base (16-10-16)":   "Base\n35→16→10→16→35",
+    "Wide (24-10-24)":   "Wide\n35→24→10→24→35",
+    "Wide (24-16-24)":   "Wide-16\n35→24→16→24→35",
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -277,8 +292,7 @@ def plot_comparison(results: dict, filename: str) -> None:
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
     fig.patch.set_facecolor(FACECOLOR)
 
-    short_names = ["AE Winner\n(2)", "Base\n(16-10-16)",
-                   "Wide\n(24-10-24)", "Wide\n(24-16-24)"]
+    short_names = [n.replace(" ", "\n", 1) for n in names]
 
     # ── Épocas ─────────────────────────────────────────────────────
     ax1.set_facecolor(FACECOLOR)
