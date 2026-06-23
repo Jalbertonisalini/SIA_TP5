@@ -10,6 +10,7 @@ import numpy as np
 import os
 import sys
 import matplotlib
+import copy
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -119,6 +120,10 @@ def train_with_plateau(factory_fn, X_clean: np.ndarray,
     history   = []
     converged = MAX_EPOCHS
 
+    # 1. Variables para trackear el mejor estado intermedio
+    best_loss = float('inf')
+    best_layers = None
+
     for epoch in range(1, MAX_EPOCHS + 1):
         X_noisy = noise_fn(X_clean)
         pred    = ae.forward(X_noisy)
@@ -126,9 +131,18 @@ def train_with_plateau(factory_fn, X_clean: np.ndarray,
         history.append(loss)
         ae.backward(loss_fn.derivative(expected=X_clean, predicted=pred), optimizer)
 
+        # 2. Guardar checkpoint si encontramos una pérdida menor
+        if loss < best_loss:
+            best_loss = loss
+            best_layers = copy.deepcopy(ae.layers)
+
         if plateau_stop(history, epoch):
             converged = epoch
             break
+
+    # 3. Restaurar los mejores pesos antes de salir
+    if best_layers is not None:
+        ae.layers = best_layers
 
     return ae, history, converged
 
