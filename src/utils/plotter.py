@@ -162,19 +162,28 @@ class Plotter:
         ax.set_axisbelow(True)
 
         for (nombre, historiales), color in zip(resultados_loss.items(), Plotter.SERIES_COLORS):
+            # ARREGLO 1: Calcular la media y desviación directamente sin np.array inicial 
+            # Esto evita el error por longitudes desiguales si np intenta crear una matriz.
+            # Convertimos a matriz asumiendo que el padding dinámico en el for anterior 
+            # ya garantizó que todos los historiales *para esta arquitectura específica* # tienen la misma longitud.
             matriz_historiales = np.array(historiales)
             
             loss_promedio = np.mean(matriz_historiales, axis=0)
             loss_std = np.std(matriz_historiales, axis=0)
-            epocas_x = np.arange(max_epochs)
+            
+            # ARREGLO 2: Ajustar el eje X a la longitud REAL del promedio
+            epocas_x = np.arange(len(loss_promedio))
 
+            # Cálculos de promedios y desvíos
             bce_final_promedio = np.mean(matriz_historiales[:, -1])
+            bce_final_std = np.std(matriz_historiales[:, -1]) # NUEVO: Desvío del BCE
+            
             err_px_promedio = np.mean(resultados_errores[nombre])
             err_px_std = np.std(resultados_errores[nombre])
 
-            # Etiqueta enriquecida idéntica a la Fase 3
+            # Etiqueta enriquecida con +- en el BCE
             etiqueta = (f"{nombre}\n"
-                        f"BCE: {bce_final_promedio:.4f} | Err Px: {err_px_promedio:.1f} ± {err_px_std:.1f}")
+                        f"BCE: {bce_final_promedio:.4f} ± {bce_final_std:.4f} | Err Px: {err_px_promedio:.1f} ± {err_px_std:.1f}")
 
             ax.plot(epocas_x, loss_promedio, label=etiqueta, color=color, linewidth=1.5)
             ax.fill_between(
@@ -201,7 +210,7 @@ class Plotter:
         fig.savefig(f'outputs/{filename}', dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"  [+] Gráfico de convergencia guardado en: outputs/{filename}")
-
+        
     @staticmethod
     def plot_learning_rate_comparison(resultados_loss: dict, max_epochs: int, filename: str, smooth_weight: float = 0.95):
         """
@@ -525,28 +534,29 @@ class Plotter:
     @staticmethod
     def plot_formula_plate(filename="formula_plate.png"):
         """Genera una imagen profesional con las fórmulas justificativas."""
-        fig = plt.figure(figsize=(9, 4))
+        # Aumentamos el alto de la figura (de 4 a 5.5) para que entre la 4ta fórmula
+        fig = plt.figure(figsize=(10, 5.5))
         fig.patch.set_facecolor('#F8F9F9')
         ax = plt.gca()
         ax.axis('off')
         
         # Separamos el texto descriptivo (negrita normal) de la fórmula (LaTeX puro)
-        # Esto evita que el parser de Matplotlib se vuelva loco con los comandos de estilo
         items = [
             ("1. Producto Punto (Hopfield):", r"$x \cdot y = \sum_{i=1}^{35} x_i y_i$"),
             ("2. Norma L2 (Magnitud):", r"$\|x\| = \sqrt{\sum_{i=1}^{35} x_i^2}$"),
-            ("3. Similitud Coseno:", r"$\text{Sim}(x, y) = \frac{x \cdot y}{\|x\| \|y\|} = \cos(\theta)$")
+            ("3. Similitud Coseno:", r"$\text{Sim}(x, y) = \frac{x \cdot y}{\|x\| \|y\|} = \cos(\theta)$"),
+            ("4. Inicial. Xavier/Glorot Normal:", r"$W \sim \mathcal{N}\left(0, \frac{2}{n_{in} + n_{out}}\right)$")
         ]
         
-        y_pos = 0.8
+        # Ajustamos el punto de inicio y el espaciado
+        y_pos = 0.85
         for label, formula in items:
-            # Dibujamos el texto plano en negrita
             plt.text(0.05, y_pos, label, fontsize=14, color='#2C3E50', fontweight='bold')
-            # Dibujamos la fórmula en la línea de abajo o al lado
-            plt.text(0.40, y_pos, formula, fontsize=16, color='#1A5276')
-            y_pos -= 0.25
+            # Movimos el inicio de la fórmula a 0.45 para dejar más margen
+            plt.text(0.45, y_pos, formula, fontsize=16, color='#1A5276')
+            y_pos -= 0.22
             
-        plt.text(0.05, 0.1, 
+        plt.text(0.05, 0.05, 
                  "Nota: La normalización elimina el sesgo por densidad de píxeles.", 
                  fontsize=11, color='#7F8C8D', fontstyle='italic')
         
@@ -555,7 +565,6 @@ class Plotter:
         plt.savefig(f"outputs/{filename}", dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  [+] Placa de fórmulas guardada en: outputs/{filename}")
-        
     @staticmethod
     def plot_latent_walk(autoencoder, X, labels, coord_start, coord_end, steps, title, filename):
         """

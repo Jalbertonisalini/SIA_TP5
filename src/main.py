@@ -128,7 +128,7 @@ def create_denoising_autoencoder() -> Network:
 import copy # Importante agregar esto arriba de todo en tu archivo
 
 def train_autoencoder(autoencoder: Network, X: np.ndarray, epochs: int = 15000, 
-                      optimizer=None, use_pixel_stopping: bool = True, 
+                      optimizer=None, use_pixel_stopping: bool = False, 
                       patience: int = 0, min_delta: float = 1e-4) -> tuple[Network, list]:
     
     if optimizer is None:
@@ -419,7 +419,7 @@ def experiment_architectures(X: np.ndarray, labels: list):
     semillas = [42, 100, 800, 1024, 2024, 3030, 4040, 5050, 6060, 7070]
     max_epochs = 200000
     
-    resultados_loss = {nombre: [] for nombre in arquitecturas.keys()}
+    resultados_loss = {} # Cambiamos esto para que guarde la lista final ajustada
     resultados_errores = {nombre: [] for nombre in arquitecturas.keys()}
     
     for nombre, factory_fn in arquitecturas.items():
@@ -429,11 +429,12 @@ def experiment_architectures(X: np.ndarray, labels: list):
         menor_loss = float('inf')
         mejor_seed = None
         
+        historiales_crudos = [] # Acá guardamos los historiales de las 10 semillas
+        
         for seed in semillas:
             np.random.seed(seed)
             
             modelo = factory_fn() 
-            # Limpiamos el learning_rate suelto para no pisarnos con el de Adam
             modelo_entrenado, historial = train_autoencoder(
                 modelo, X_full, epochs=max_epochs, 
                 optimizer=Adam(learning_rate=0.001),
@@ -452,13 +453,25 @@ def experiment_architectures(X: np.ndarray, labels: list):
             max_err = evaluate_pixel_diff(X_full, final_pred)
             resultados_errores[nombre].append(max_err)
             
-            # Padding
-            while len(historial) < max_epochs:
-                historial.append(historial[-1])
-                
-            resultados_loss[nombre].append(historial)
+            # Guardamos el historial crudo sin estirarlo todavía
+            historiales_crudos.append(historial)
             
         print(f"  [*] Mejor corrida para {nombre}: Seed {mejor_seed} con Loss {menor_loss:.4f}")
+        
+        # --- NUEVA LÓGICA DE PADDING DINÁMICO ---
+        # 1. Buscamos la época máxima REAL que alcanzó ESTA arquitectura
+        max_epocas_real = max(len(h) for h in historiales_crudos)
+        
+        # 2. Rellenamos (padding) SOLO hasta esa época máxima real
+        historiales_ajustados = []
+        for h in historiales_crudos:
+            h_ajustado = h.copy()
+            while len(h_ajustado) < max_epocas_real:
+                h_ajustado.append(h_ajustado[-1])
+            historiales_ajustados.append(h_ajustado)
+            
+        # Guardamos la matriz perfectamente alineada para el plotter
+        resultados_loss[nombre] = historiales_ajustados
         
         nombre_limpio = nombre.replace(' ', '_').replace('(', '').replace(')', '')
         
@@ -475,7 +488,7 @@ def experiment_architectures(X: np.ndarray, labels: list):
                 mejor_modelo, 
                 X_full[1], # Índice 1 = Letra 'b'
                 "a",       # Etiqueta visual
-                nombre,    # <--- NUEVO: Pasamos el nombre de la arquitectura (ej: "Shallow (2)")
+                nombre,    
                 f"comparativa_best_{nombre_limpio}.png"
             )
 
@@ -764,11 +777,11 @@ def main():
     # experiment_phase1_baseline(X, caracteres)
     # experiment_phase2_capacity_limit(X, caracteres)
     # experiment_subset(X_sub, labels_sub)
-    # experiment_architectures(X, caracteres)
+    experiment_architectures(X, caracteres)
     # experiment_learning_rates(X, caracteres)
     # experiment_phase3_optimizers(X, caracteres)
     # experiment_play_generative(X, caracteres)
-    experiment_latent_walk(X, caracteres)
+    # experiment_latent_walk(X, caracteres)
 
 if __name__ == "__main__":
     main()
